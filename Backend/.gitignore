@@ -1,0 +1,12 @@
+node_modules
+.env
+.env.test
+coverage
+dist
+*.log
+.DS_Store
+
+
+
+.cache/
+build/
