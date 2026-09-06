@@ -1,0 +1,222 @@
+{
+  "info": {
+    "name": "Cab Booking System API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:5000/api" },
+    { "key": "passengerToken", "value": "" },
+    { "key": "driverToken", "value": "" },
+    { "key": "rideId", "value": "" },
+    { "key": "paymentId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Auth (Passenger)",
+      "item": [
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/auth/register",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Test Passenger\",\n  \"email\": \"passenger1@example.com\",\n  \"phone\": \"9876500001\",\n  \"password\": \"Password123\",\n  \"gender\": \"male\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/auth/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"passenger1@example.com\",\n  \"password\": \"Password123\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Refresh Token",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/auth/refresh"
+          }
+        },
+        {
+          "name": "Get Me",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{passengerToken}}" }],
+            "url": "{{baseUrl}}/auth/me"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Driver",
+      "item": [
+        {
+          "name": "Register Driver",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/drivers/register",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Test Driver\",\n  \"email\": \"driver1@example.com\",\n  \"phone\": \"9876500002\",\n  \"password\": \"Password123\",\n  \"gender\": \"male\",\n  \"vehicleType\": \"car\",\n  \"vehicleModel\": \"Swift Dzire\",\n  \"vehicleNumber\": \"PB10XY9999\",\n  \"vehicleColor\": \"White\",\n  \"licenseNumber\": \"DL12345\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Login Driver",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/drivers/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"driver1@example.com\",\n  \"password\": \"Password123\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Go Online",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{driverToken}}" }],
+            "url": "{{baseUrl}}/drivers/online"
+          }
+        },
+        {
+          "name": "Update Location",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{driverToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/drivers/location",
+            "body": { "mode": "raw", "raw": "{\n  \"latitude\": 30.6469,\n  \"longitude\": 76.3894\n}" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Rides",
+      "item": [
+        {
+          "name": "Estimate Fare",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{passengerToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/rides/estimate",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pickup\": { \"latitude\": 30.6469, \"longitude\": 76.3894, \"address\": \"Bus Stand\" },\n  \"drop\": { \"latitude\": 30.7046, \"longitude\": 76.7179, \"address\": \"Chandigarh\" },\n  \"vehicleType\": \"car\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Create Ride",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{passengerToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/rides",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pickup\": { \"latitude\": 30.6469, \"longitude\": 76.3894, \"address\": \"Bus Stand\" },\n  \"drop\": { \"latitude\": 30.7046, \"longitude\": 76.7179, \"address\": \"Chandigarh\" },\n  \"vehicleType\": \"car\",\n  \"paymentMethod\": \"cash\"\n}"
+            }
+          }
+        },
+        { "name": "Get Ride", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{passengerToken}}" }], "url": "{{baseUrl}}/rides/{{rideId}}" } },
+        { "name": "My Rides", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{passengerToken}}" }], "url": "{{baseUrl}}/rides/my-rides" } },
+        { "name": "Driver Rides", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{driverToken}}" }], "url": "{{baseUrl}}/rides/driver-rides" } },
+        { "name": "Accept Ride", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{driverToken}}" }], "url": "{{baseUrl}}/rides/{{rideId}}/accept" } },
+        { "name": "Reject Ride", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{driverToken}}" }], "url": "{{baseUrl}}/rides/{{rideId}}/reject" } },
+        { "name": "Driver Arrived", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{driverToken}}" }], "url": "{{baseUrl}}/rides/{{rideId}}/arrived" } },
+        {
+          "name": "Verify OTP",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{driverToken}}" }, { "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/rides/{{rideId}}/verify-otp",
+            "body": { "mode": "raw", "raw": "{\n  \"otp\": \"1234\"\n}" }
+          }
+        },
+        { "name": "Start Ride", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{driverToken}}" }], "url": "{{baseUrl}}/rides/{{rideId}}/start" } },
+        { "name": "Complete Ride", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{driverToken}}" }], "url": "{{baseUrl}}/rides/{{rideId}}/complete" } },
+        {
+          "name": "Cancel Ride",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{passengerToken}}" }, { "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/rides/{{rideId}}/cancel",
+            "body": { "mode": "raw", "raw": "{\n  \"reason\": \"Change of plans\"\n}" }
+          }
+        },
+        {
+          "name": "Trigger SOS",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{passengerToken}}" }, { "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/rides/{{rideId}}/sos",
+            "body": { "mode": "raw", "raw": "{\n  \"latitude\": 30.66,\n  \"longitude\": 76.40\n}" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Payments",
+      "item": [
+        {
+          "name": "Create Order",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{passengerToken}}" }, { "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/payments/create-order",
+            "body": { "mode": "raw", "raw": "{\n  \"rideId\": \"{{rideId}}\"\n}" }
+          }
+        },
+        {
+          "name": "Verify Payment",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{passengerToken}}" }, { "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/payments/verify",
+            "body": { "mode": "raw", "raw": "{\n  \"razorpay_order_id\": \"\",\n  \"razorpay_payment_id\": \"\",\n  \"razorpay_signature\": \"\"\n}" }
+          }
+        },
+        { "name": "Get Payment", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{passengerToken}}" }], "url": "{{baseUrl}}/payments/{{paymentId}}" } }
+      ]
+    },
+    {
+      "name": "Ratings",
+      "item": [
+        {
+          "name": "Create Rating",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{passengerToken}}" }, { "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/ratings",
+            "body": { "mode": "raw", "raw": "{\n  \"rideId\": \"{{rideId}}\",\n  \"stars\": 5,\n  \"review\": \"Great ride!\"\n}" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Notifications",
+      "item": [
+        { "name": "My Notifications", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{passengerToken}}" }], "url": "{{baseUrl}}/notifications" } }
+      ]
+    }
+  ]
+}
