@@ -10,9 +10,10 @@ import { updateDriverProfile } from '../../services/api/driverApi';
 type Props = NativeStackScreenProps<DriverStackParamList, 'EditProfile'>;
 
 export default function EditProfileScreen({ navigation }: Props) {
-  const { user, updateLocalDriver } = useAuth();
-  const [name, setName] = useState(user?.name || '');
-  const [vehicleModel, setVehicleModel] = useState(user?.vehicleModel || '');
+  const { driver, user, updateLocalDriver } = useAuth();
+  const currentDriver = driver || (user as any);
+  const [name, setName] = useState(currentDriver?.name || '');
+  const [vehicleModel, setVehicleModel] = useState(currentDriver?.vehicleModel || '');
   const [loading, setLoading] = useState(false);
 
   async function handleSave() {

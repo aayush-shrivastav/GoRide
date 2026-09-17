@@ -183,38 +183,38 @@ describe("PHASE 1C — Payment, Earnings and Rating Integration Tests", () => {
   });
 
   describe("2. Online payment settlement", () => {
-    it("validates order creation preconditions (requires completed ride and online payment method)", async () => {
+    it("validates order creation preconditions (requires active or completed ride)", async () => {
       const passenger = await makePassenger();
       const driver = await makeDriver();
       const passengerToken = signAccessToken({ id: passenger._id.toString(), role: "passenger" });
 
-      // Incomplete ride
-      const incompleteRide = await createTestRide(passenger, driver, {
-        rideStatus: RIDE_STATUS.RIDE_STARTED,
+      // Incomplete/unassigned ride in SEARCHING status
+      const searchingRide = await createTestRide(passenger, null, {
+        rideStatus: RIDE_STATUS.SEARCHING,
         paymentMethod: PAYMENT_METHOD.ONLINE,
       });
 
-      const resIncomplete = await request(app)
+      const resSearching = await request(app)
         .post("/api/payments/create-order")
         .set("Authorization", `Bearer ${passengerToken}`)
-        .send({ rideId: incompleteRide._id.toString() });
+        .send({ rideId: searchingRide._id.toString() });
 
-      expect(resIncomplete.status).toBe(400);
-      expect(resIncomplete.body.message).toMatch(/Payment can only be started after ride completion/i);
+      expect(resSearching.status).toBe(400);
+      expect(resSearching.body.message).toMatch(/Payment can only be initiated for an active or completed ride/i);
 
-      // Completed ride but cash payment method
-      const cashRide = await createTestRide(passenger, driver, {
-        rideStatus: RIDE_STATUS.RIDE_COMPLETED,
-        paymentMethod: PAYMENT_METHOD.CASH,
+      // Cancelled ride
+      const cancelledRide = await createTestRide(passenger, driver, {
+        rideStatus: RIDE_STATUS.CANCELLED,
+        paymentMethod: PAYMENT_METHOD.ONLINE,
       });
 
-      const resCash = await request(app)
+      const resCancelled = await request(app)
         .post("/api/payments/create-order")
         .set("Authorization", `Bearer ${passengerToken}`)
-        .send({ rideId: cashRide._id.toString() });
+        .send({ rideId: cancelledRide._id.toString() });
 
-      expect(resCash.status).toBe(400);
-      expect(resCash.body.message).toMatch(/not set up for online payment/i);
+      expect(resCancelled.status).toBe(400);
+      expect(resCancelled.body.message).toMatch(/Payment can only be initiated for an active or completed ride/i);
     });
 
     it("creates a gateway order and pending Payment record for a completed online ride", async () => {

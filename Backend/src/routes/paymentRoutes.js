@@ -9,9 +9,9 @@ const { createOrderSchema, verifyPaymentSchema } = require("../validators/paymen
 // check requires the exact raw request body. It is intentionally not
 // re-declared here to avoid a second, JSON-parsed handler shadowing it.
 
-router.use(authenticate, authorize("passenger"));
-router.post("/create-order", validate(createOrderSchema), ctrl.createOrder);
-router.post("/verify", validate(verifyPaymentSchema), ctrl.verifyPayment);
-router.get("/:paymentId", ctrl.getPayment);
+router.use(authenticate);
+router.post("/create-order", authorize("passenger"), validate(createOrderSchema), ctrl.createOrder);
+router.post("/verify", authorize("passenger"), validate(verifyPaymentSchema), ctrl.verifyPayment);
+router.get("/:paymentId", authorize("passenger", "driver"), ctrl.getPayment);
 
 module.exports = router;

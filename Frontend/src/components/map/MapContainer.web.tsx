@@ -234,8 +234,8 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(
       wheelPxPerZoomLevel: 80,
     }).setView([${centerLat}, ${centerLng}], 14);
 
-    // OpenStreetMap tiles — free, no API key required
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    // High-resolution OpenStreetMap tiles (100% free, zero API key required, zero watermark)
+    L.tileLayer('https://tile.openstreetmap.de/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
     }).addTo(map);

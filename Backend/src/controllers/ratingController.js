@@ -35,8 +35,9 @@ const createRating = catchAsync(async (req, res, next) => {
 
   // Notify driver about the new rating via push notification + socket
   try {
+    const driverId = ride.driver?._id ? ride.driver._id.toString() : ride.driver.toString();
     await notificationService.notify({
-      recipientId: ride.driver,
+      recipientId: driverId,
       recipientRole: "driver",
       type: NOTIFICATION_TYPE.RATING_RECEIVED,
       title: "New Rating Received ⭐",
@@ -45,7 +46,7 @@ const createRating = catchAsync(async (req, res, next) => {
     });
 
     const io = require("../sockets").getIO();
-    io.to(`driver:${ride.driver}`).emit("rating_received", {
+    io.to(`driver:${driverId}`).emit("rating_received", {
       rideId: ride._id,
       stars,
       review,

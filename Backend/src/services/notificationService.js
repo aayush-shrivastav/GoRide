@@ -14,10 +14,11 @@ function attachIO(io) {
  * provider (FCM/APNs) can be plugged in alongside the socket emit below.
  */
 async function notify({ recipientId, recipientRole, type, title, message, ride = null }) {
-  const notification = await Notification.create({ recipientId, recipientRole, type, title, message, ride });
+  const actualRecipientId = recipientId?._id ? recipientId._id.toString() : (recipientId ? recipientId.toString() : "");
+  const notification = await Notification.create({ recipientId: actualRecipientId, recipientRole, type, title, message, ride });
 
-  if (ioInstance) {
-    const room = `${recipientRole}:${recipientId}`;
+  if (ioInstance && actualRecipientId) {
+    const room = `${recipientRole}:${actualRecipientId}`;
     ioInstance.to(room).emit("notification", {
       id: notification._id,
       type,
@@ -26,7 +27,7 @@ async function notify({ recipientId, recipientRole, type, title, message, ride =
       rideId: ride,
       createdAt: notification.createdAt,
     });
-  } else {
+  } else if (!ioInstance) {
     logger.warn("notificationService: io not attached yet, skipping real-time emit");
   }
 
@@ -34,3 +35,4 @@ async function notify({ recipientId, recipientRole, type, title, message, ride =
 }
 
 module.exports = { attachIO, notify };
+

@@ -4,14 +4,19 @@ export interface CreateOrderResponse {
   amount: number;
   currency: string;
   keyId?: string;
+  clientSecret?: string;
+  publishableKey?: string;
 }
 
 export interface VerifyPaymentPayload {
   paymentId?: string;
   rideId?: string;
-  razorpay_order_id: string;
-  razorpay_payment_id: string;
-  razorpay_signature: string;
+  razorpay_order_id?: string;
+  razorpay_payment_id?: string;
+  razorpay_signature?: string;
+  paymentIntentId?: string;
+  orderId?: string;
+  signature?: string;
 }
 
 export interface Payment {

@@ -94,12 +94,20 @@ apiClient.interceptors.request.use(
   (error) => Promise.reject(error),
 );
 
+// Auth endpoints that should NEVER trigger a token refresh on 401.
+// A 401 from /auth/login or /auth/register means bad credentials — not an expired token.
+const AUTH_ENDPOINTS_NO_REFRESH = ['/auth/login', '/auth/register', '/auth/refresh', '/drivers/login', '/drivers/register'];
+
 apiClient.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
+    const requestUrl: string = originalRequest?.url || '';
 
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    // Skip refresh for auth endpoints — their 401s are real credential errors
+    const isAuthEndpoint = AUTH_ENDPOINTS_NO_REFRESH.some(ep => requestUrl.includes(ep));
+
+    if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint) {
       originalRequest._retry = true;
 
       try {

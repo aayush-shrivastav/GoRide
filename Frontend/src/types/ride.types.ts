@@ -8,37 +8,76 @@ export interface LocationPoint {
   coordinates: number[]; // [longitude, latitude]
 }
 
+export interface RideStop {
+  location: LocationPoint;
+  address: string;
+  order: number;
+}
+
 export interface Ride {
   _id: string;
+
   passenger: Passenger | string;
+
   driver?: Driver | string;
+
   pickupLocation: LocationPoint;
   pickupAddress: string;
+
   dropLocation: LocationPoint;
   dropAddress: string;
-  stops?: Array<{
-    location: LocationPoint;
-    address: string;
-    order: number;
-  }>;
+
+  stops?: RideStop[];
+  stopCount?: number;
+
   vehicleType: string;
+
   estimatedFare: number;
   finalFare?: number;
+
   platformCommission?: number;
   driverEarning?: number;
+
+  // Backend distance
+  // distance = meters
   distance: number;
   distanceKm?: number;
+
+  // Backend duration
+  // duration = seconds
   duration: number;
   estimatedDurationMin?: number;
+
   requestedAt?: string;
+
   rideStatus: string;
+
   paymentMethod: 'cash' | 'online';
-  paymentStatus: 'PENDING' | 'PROCESSING' | 'SUCCESS' | 'FAILED' | 'REFUNDED';
+
+  paymentStatus:
+  | 'PENDING'
+  | 'PROCESSING'
+  | 'SUCCESS'
+  | 'FAILED'
+  | 'REFUNDED';
+
   otp?: string;
+
   createdAt: string;
   updatedAt?: string;
+
   cancellationReason?: string;
   cancelledBy?: string;
+  rating?: {
+    _id?: string;
+    stars: number;
+    review?: string;
+    createdAt?: string;
+    passenger?: {
+      name?: string;
+      profileImage?: string;
+    };
+  };
 }
 
 export interface GeoLocation {
@@ -49,7 +88,10 @@ export interface GeoLocation {
 
 export interface RideEstimate {
   vehicleType: string;
-  fare: number | {
+
+  fare:
+  | number
+  | {
     totalFare: number;
     baseFare?: number;
     distanceFare?: number;
@@ -57,8 +99,12 @@ export interface RideEstimate {
     platformFee?: number;
     surgeMultiplier?: number;
   };
+
+  // distance = meters
   distance?: number;
   distanceKm?: number;
+
+  // duration = seconds
   duration?: number;
   durationMin?: number;
 }
@@ -107,29 +153,46 @@ export interface RideCompletedPayload {
 export interface RideRequestReceivedPayload {
   rideId: string;
   _id?: string;
+
   pickupAddress?: string;
   dropAddress?: string;
-  stops?: Ride['stops'];
+
+  stops?: RideStop[];
   stopCount?: number;
+
   distanceKm?: number;
   estimatedDurationMin?: number;
   estimatedFare?: number;
+
   vehicleType?: string;
-  paymentMethod?: string;
+
+  paymentMethod?: 'cash' | 'online';
+
   expiresInSeconds?: number;
-  passenger?: any;
+
+  passenger?: Passenger | string;
+
   ride?: Ride;
 }
 
 export interface PaymentUpdatedPayload {
   rideId: string;
-  status: 'PENDING' | 'PROCESSING' | 'SUCCESS' | 'FAILED' | 'REFUNDED';
+
+  status:
+  | 'PENDING'
+  | 'PROCESSING'
+  | 'SUCCESS'
+  | 'FAILED'
+  | 'REFUNDED';
 }
 
 export interface SosTriggeredPayload {
   rideId: string;
   sosId: string;
-  location?: LocationPoint | {
+
+  location?:
+  | LocationPoint
+  | {
     type: 'Point';
     coordinates: number[];
   };

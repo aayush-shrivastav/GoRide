@@ -29,6 +29,7 @@ const userSchema = new mongoose.Schema(
       {
         name: { type: String, required: true },
         phone: { type: String, required: true, match: /^[0-9]{10}$/ },
+        email: { type: String, default: null, trim: true, lowercase: true },
       }
     ],
     rating: { type: Number, default: 5, min: 0, max: 5 },

@@ -19,7 +19,8 @@ export async function getProfile(): Promise<{ user: Passenger }> {
 
 export async function updateProfile(data: any): Promise<{ user: any }> {
   const response = await apiClient.patch('/auth/profile', data);
-  return response.data;
+  // The API wraps successful responses in { success, message, data }.
+  return response.data.data || response.data;
 }
 
 export async function forgotPassword(email: string): Promise<{ devOtp?: string }> {
@@ -42,17 +43,24 @@ export async function logout(): Promise<void> {
 export const getMe = getProfile;
 export const logoutPassenger = logout;
 
-export async function getEmergencyContacts(): Promise<{ contacts: Array<{ _id: string; name: string; phone: string }> }> {
+export interface EmergencyContact {
+  _id: string;
+  name: string;
+  phone: string;
+  email?: string;
+}
+
+export async function getEmergencyContacts(): Promise<{ contacts: Array<EmergencyContact> }> {
   const response = await apiClient.get('/auth/emergency-contacts');
   return response.data.data;
 }
 
-export async function addEmergencyContact(data: { name: string; phone: string }): Promise<{ contacts: Array<{ _id: string; name: string; phone: string }> }> {
+export async function addEmergencyContact(data: { name: string; phone: string; email?: string }): Promise<{ contacts: Array<EmergencyContact> }> {
   const response = await apiClient.post('/auth/emergency-contacts', data);
   return response.data.data;
 }
 
-export async function deleteEmergencyContact(contactId: string): Promise<{ contacts: Array<{ _id: string; name: string; phone: string }> }> {
+export async function deleteEmergencyContact(contactId: string): Promise<{ contacts: Array<EmergencyContact> }> {
   const response = await apiClient.delete(`/auth/emergency-contacts/${contactId}`);
   return response.data.data;
 }

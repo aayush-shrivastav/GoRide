@@ -26,6 +26,9 @@ import { RIDE_STATUS } from '../../constants/enums';
 import { Ride, SosTriggeredPayload } from '../../types/ride.types';
 import Button from '../../components/common/Button';
 import Input from '../../components/common/Input';
+import SosSwipeModal from '../../components/common/SosSwipeModal';
+import PaymentCollectModal from '../../components/driver/PaymentCollectModal';
+import { useSosEmergency } from '../../hooks/useSosEmergency';
 import { parseApiError } from '../../utils/formatters';
 
 type Props = NativeStackScreenProps<DriverStackParamList, 'ActiveRide'>;
@@ -72,7 +75,18 @@ export default function ActiveRideScreen({ navigation, route }: Props) {
   
   const [loading, setLoading] = useState(false);
   const [otpInput, setOtpInput] = useState('');
-  const [sosLoading, setSosLoading] = useState(false);
+  const { showSosModal, setShowSosModal, sosLoading, handleConfirmSos } = useSosEmergency({
+    rideId,
+    getLocation: () =>
+      driverLocation ||
+      (currentRide?.pickupLocation
+        ? {
+            latitude: currentRide.pickupLocation.coordinates[1],
+            longitude: currentRide.pickupLocation.coordinates[0],
+          }
+        : null),
+  });
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [sosReceived, setSosReceived] = useState(false);
   const handledSosIds = useRef<Set<string>>(new Set());
   const [routeCoords, setRouteCoords] = useState<LatLng[]>([]);
@@ -214,46 +228,86 @@ export default function ActiveRideScreen({ navigation, route }: Props) {
     }
   }, [currentRide?.rideStatus, driverLocation]);
 
+  // ── Payment Updated Socket Listener ───────────────────────
+  useEffect(() => {
+    const handlePaymentUpdated = (payload: { rideId?: string; status?: string }) => {
+      if (payload?.rideId === rideId && payload.status === 'SUCCESS') {
+        if (currentRideRef.current) {
+          setCurrentRide({ ...currentRideRef.current, paymentStatus: 'SUCCESS' });
+        }
+        Alert.alert('Payment Received 💰', 'The passenger has completed online payment for this trip!');
+      }
+    };
+    socketService.on('payment_updated', handlePaymentUpdated);
+    return () => {
+      socketService.off('payment_updated', handlePaymentUpdated);
+    };
+  }, [rideId]);
+
+  async function handleRefreshPaymentStatus() {
+    try {
+      const res = await getRide(rideId);
+      setCurrentRide(res);
+      if (res.paymentStatus === 'SUCCESS') {
+        Alert.alert('Payment Received ✅', 'Passenger online payment has been confirmed!');
+      } else {
+        Alert.alert('Payment Pending ⏳', 'Passenger has not completed online payment yet.');
+      }
+    } catch (e) {
+      Alert.alert('Status Check', 'Could not refresh payment status.');
+    }
+  }
+
   async function handleStatusUpdate(status: string) {
+    if (status === RIDE_STATUS.RIDE_COMPLETED) {
+      setShowPaymentModal(true);
+      return;
+    }
+
     setLoading(true);
     try {
-      if (status === RIDE_STATUS.RIDE_COMPLETED && currentRide?.paymentMethod === 'cash') {
-        Alert.alert(
-          'Collect Cash',
-          `Please collect ₹${Math.round(currentRide.finalFare || currentRide.estimatedFare)} from the passenger before ending the ride.`,
-          [
-            { text: 'Cancel', style: 'cancel', onPress: () => setLoading(false) },
-            { 
-              text: 'Cash Collected & End Ride', 
-              onPress: async () => {
-                try {
-                  const res = await updateRideStatus(rideId, status);
-                  hasHandledTerminal.current = true;
-                  setCurrentRide(res);
-                  clearRide();
-                  navigation.replace('DriverTabs');
-                } catch (err) {
-                  Alert.alert('Update Failed', parseApiError(err));
-                } finally {
-                  setLoading(false);
-                }
-              }
-            }
-          ]
-        );
-        return;
-      }
-
       const res = await updateRideStatus(rideId, status);
       hasHandledTerminal.current = true;
       setCurrentRide(res);
       
-      if (status === RIDE_STATUS.RIDE_COMPLETED || status === RIDE_STATUS.CANCELLED_BY_DRIVER) {
+      if (status === RIDE_STATUS.CANCELLED_BY_DRIVER) {
         clearRide();
         navigation.replace('DriverTabs');
       }
     } catch (err) {
       Alert.alert('Update Failed', parseApiError(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleCompleteWithCash() {
+    setLoading(true);
+    try {
+      const res = await updateRideStatus(rideId, RIDE_STATUS.RIDE_COMPLETED, { paymentMethod: 'cash' });
+      setShowPaymentModal(false);
+      hasHandledTerminal.current = true;
+      setCurrentRide(res);
+      clearRide();
+      navigation.replace('DriverTabs');
+    } catch (err) {
+      Alert.alert('Completion Failed', parseApiError(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleCompleteWithOnline() {
+    setLoading(true);
+    try {
+      const res = await updateRideStatus(rideId, RIDE_STATUS.RIDE_COMPLETED, { paymentMethod: 'online' });
+      setShowPaymentModal(false);
+      hasHandledTerminal.current = true;
+      setCurrentRide(res);
+      clearRide();
+      navigation.replace('DriverTabs');
+    } catch (err) {
+      Alert.alert('Completion Failed', parseApiError(err));
     } finally {
       setLoading(false);
     }
@@ -279,20 +333,6 @@ export default function ActiveRideScreen({ navigation, route }: Props) {
       Alert.alert('Verification Failed', parseApiError(err));
     } finally {
       setLoading(false);
-    }
-  }
-
-  async function handleSos() {
-    setSosLoading(true);
-    try {
-      const lat = driverLocation?.latitude ?? currentRide?.pickupLocation.coordinates[1] ?? 0;
-      const lng = driverLocation?.longitude ?? currentRide?.pickupLocation.coordinates[0] ?? 0;
-      await triggerSos(rideId, lat, lng);
-      Alert.alert('SOS Triggered', 'The passenger has been notified.');
-    } catch (err) {
-      Alert.alert('SOS Failed', parseApiError(err));
-    } finally {
-      setSosLoading(false);
     }
   }
 
@@ -347,9 +387,17 @@ export default function ActiveRideScreen({ navigation, route }: Props) {
       );
     };
 
+    const handleSosResolved = (payload: { rideId?: string }) => {
+      if (!payload?.rideId || payload.rideId !== rideId) return;
+      setSosReceived(false);
+      Alert.alert('SOS Resolved', 'Emergency alert has been resolved.');
+    };
+
     socketService.on('sos_triggered', handleSosTriggered);
+    socketService.on('sos_resolved', handleSosResolved);
     return () => {
       socketService.off('sos_triggered', handleSosTriggered);
+      socketService.off('sos_resolved', handleSosResolved);
     };
   }, [rideId]);
 
@@ -408,14 +456,31 @@ export default function ActiveRideScreen({ navigation, route }: Props) {
         <View style={styles.statusBadge}>
           <Text style={styles.statusText}>{currentRide.rideStatus.replace(/_/g, ' ')}</Text>
         </View>
-        <TouchableOpacity style={styles.sosBtn} onPress={handleSos} disabled={sosLoading}>
+        <TouchableOpacity
+          style={styles.sosBtn}
+          onPress={() => setShowSosModal(true)}
+          onLongPress={() => setShowSosModal(true)}
+          disabled={sosLoading}>
           <Text style={styles.sosText}>SOS</Text>
         </TouchableOpacity>
       </View>
 
       {sosReceived && (
         <View style={styles.emergencyBanner}>
-          <Text style={styles.emergencyBannerText}>🚨 EMERGENCY SOS ACTIVE ON THIS RIDE</Text>
+          <View style={styles.emergencyHeaderRow}>
+            <View style={styles.emergencyPulsingDot} />
+            <Text style={styles.emergencyBannerTitle}>⚠️ EMERGENCY SOS ACTIVE</Text>
+          </View>
+          <Text style={styles.emergencyBannerSub}>
+            Distress alert active. Vehicle is live-tracked by GoRide Safety & Police Control Room.
+          </Text>
+          <TouchableOpacity
+            style={styles.emergencyCallBtn}
+            onPress={() => Linking.openURL('tel:112')}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.emergencyCallBtnText}>📞 Call Police (112) Immediately</Text>
+          </TouchableOpacity>
         </View>
       )}
 
@@ -511,6 +576,15 @@ export default function ActiveRideScreen({ navigation, route }: Props) {
             <TouchableOpacity 
               style={styles.cancelLink}
               onPress={() => {
+                if (Platform.OS === 'web') {
+                  const ok = typeof window !== 'undefined' && window.confirm
+                    ? window.confirm('Cancel Ride: Are you sure you want to cancel this ride?')
+                    : true;
+                  if (ok) {
+                    handleStatusUpdate(RIDE_STATUS.CANCELLED_BY_DRIVER);
+                  }
+                  return;
+                }
                 Alert.alert('Cancel Ride', 'Are you sure?', [
                   { text: 'No' },
                   { text: 'Yes, Cancel', style: 'destructive', onPress: () => handleStatusUpdate(RIDE_STATUS.CANCELLED_BY_DRIVER) }
@@ -521,6 +595,26 @@ export default function ActiveRideScreen({ navigation, route }: Props) {
           )}
         </View>
       </View>
+
+      {/* ── SOS SWIPE-UP EMERGENCY MODAL ───────────────────── */}
+      <SosSwipeModal
+        visible={showSosModal}
+        onClose={() => setShowSosModal(false)}
+        onConfirm={handleConfirmSos}
+        loading={sosLoading}
+      />
+
+      {/* ── PAYMENT COLLECTION MODAL (DRIVER SIDE) ─────────── */}
+      <PaymentCollectModal
+        visible={showPaymentModal}
+        fare={currentRide?.finalFare || currentRide?.estimatedFare || 0}
+        isOnlinePaid={currentRide?.paymentStatus === 'SUCCESS'}
+        loading={loading}
+        onConfirmCash={handleCompleteWithCash}
+        onConfirmOnline={handleCompleteWithOnline}
+        onRefreshStatus={handleRefreshPaymentStatus}
+        onCancel={() => setShowPaymentModal(false)}
+      />
     </View>
   );
 }
@@ -559,26 +653,6 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.full,
   },
   sosText: { color: Colors.white, fontWeight: FontWeight.bold },
-  emergencyBanner: {
-    position: 'absolute',
-    top: Platform.OS === 'android' ? 95 : 115,
-    left: Spacing.lg,
-    right: Spacing.lg,
-    backgroundColor: Colors.error,
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.md,
-    borderRadius: BorderRadius.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 100,
-    elevation: 8,
-  },
-  emergencyBannerText: {
-    color: Colors.white,
-    fontWeight: FontWeight.bold,
-    fontSize: FontSize.sm,
-    letterSpacing: 0.5,
-  },
   bottomSheet: {
     position: 'absolute',
     bottom: 0,
@@ -676,5 +750,60 @@ const styles = StyleSheet.create({
     fontSize: FontSize.sm,
     color: Colors.error,
     fontWeight: FontWeight.semibold,
+  },
+  emergencyBanner: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 104 : 76,
+    left: Spacing.md,
+    right: Spacing.md,
+    backgroundColor: '#7f1d1d',
+    borderRadius: BorderRadius.xl,
+    padding: Spacing.md,
+    zIndex: 99,
+    borderWidth: 1.5,
+    borderColor: '#ef4444',
+    shadowColor: '#ef4444',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  emergencyHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  emergencyPulsingDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#ef4444',
+    marginRight: 8,
+  },
+  emergencyBannerTitle: {
+    color: '#ffffff',
+    fontWeight: FontWeight.bold,
+    fontSize: FontSize.sm,
+    letterSpacing: 0.8,
+  },
+  emergencyBannerSub: {
+    color: '#fecaca',
+    fontSize: FontSize.xs,
+    lineHeight: 16,
+    marginBottom: Spacing.sm,
+  },
+  emergencyCallBtn: {
+    backgroundColor: '#dc2626',
+    paddingVertical: 10,
+    borderRadius: BorderRadius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#f87171',
+  },
+  emergencyCallBtnText: {
+    color: '#ffffff',
+    fontWeight: FontWeight.bold,
+    fontSize: FontSize.xs,
   },
 });

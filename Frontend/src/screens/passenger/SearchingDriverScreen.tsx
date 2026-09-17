@@ -9,13 +9,15 @@ import {
   StatusBar,
   BackHandler,
   Platform,
+  Modal,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { PassengerStackParamList } from '../../navigation/PassengerNavigator';
 import { Colors } from '../../constants/colors';
 import { FontSize, FontWeight, Spacing, BorderRadius } from '../../constants/theme';
 import { useRide } from '../../context/RideContext';
-import { cancelRide, getRide } from '../../services/api/rideApi';
+import { cancelRide, getRide, acceptAnyDriver } from '../../services/api/rideApi';
+import { socketService } from '../../services/socket';
 import { RIDE_STATUS } from '../../constants/enums';
 import Button from '../../components/common/Button';
 import ConfirmModal from '../../components/common/ConfirmModal';
@@ -37,6 +39,8 @@ export default function SearchingDriverScreen({ navigation, route }: Props) {
   const [cancelling, setCancelling] = useState(false);
   const [phase, setPhase] = useState<SearchPhase>('searching_all');
   const [elapsedSec, setElapsedSec] = useState(0);
+  const [showNoFemaleModal, setShowNoFemaleModal] = useState(false);
+  const [switchingDriver, setSwitchingDriver] = useState(false);
 
   const pulseAnim  = useRef(new Animated.Value(0)).current;
   const spinAnim   = useRef(new Animated.Value(0)).current;
@@ -71,14 +75,28 @@ export default function SearchingDriverScreen({ navigation, route }: Props) {
     return () => clearInterval(timerRef.current);
   }, []);
 
+  // ── Socket listener for no_female_driver_found ──────────────
+  useEffect(() => {
+    const handleNoFemaleDriver = (data?: { rideId?: string }) => {
+      if (!data?.rideId || data.rideId === rideId) {
+        setPhase('no_female_found');
+        setShowNoFemaleModal(true);
+      }
+    };
+
+    socketService.on('no_female_driver_found', handleNoFemaleDriver);
+    return () => {
+      socketService.off('no_female_driver_found', handleNoFemaleDriver);
+    };
+  }, [rideId]);
+
   useEffect(() => {
     if (hasFemalePref) {
-      if (elapsedSec < 30) {
+      if (elapsedSec >= 60 && phase === 'searching_female') {
+        setPhase('no_female_found');
+        setShowNoFemaleModal(true);
+      } else if (elapsedSec < 60 && phase !== 'no_female_found') {
         setPhase('searching_female');
-      } else if (elapsedSec < 60) {
-        setPhase('searching_all');
-      } else {
-        setPhase('expanding_radius');
       }
     } else {
       if (elapsedSec < 45) {
@@ -87,7 +105,23 @@ export default function SearchingDriverScreen({ navigation, route }: Props) {
         setPhase('expanding_radius');
       }
     }
-  }, [elapsedSec, hasFemalePref]);
+  }, [elapsedSec, hasFemalePref, phase]);
+
+  // ── Switch to male / any driver handler ────────────────────
+  async function handleAcceptAnyDriver() {
+    setSwitchingDriver(true);
+    try {
+      const updatedRide = await acceptAnyDriver(rideId);
+      setCurrentRide(updatedRide);
+      setShowNoFemaleModal(false);
+      setPhase('searching_all');
+      setElapsedSec(0);
+    } catch (err) {
+      Alert.alert('Error', parseApiError(err));
+    } finally {
+      setSwitchingDriver(false);
+    }
+  }
 
   // ── Prevent hardware back ───────────────────────────────────
   useEffect(() => {
@@ -318,6 +352,57 @@ export default function SearchingDriverScreen({ navigation, route }: Props) {
         />
       </View>
 
+      {/* ── No Female Driver Modal (Apology + Choice) ────── */}
+      <Modal
+        visible={showNoFemaleModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {}}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            {/* Header Icon */}
+            <View style={styles.modalIconWrap}>
+              <Text style={styles.modalIcon}>👩‍✈️</Text>
+            </View>
+
+            {/* Title */}
+            <Text style={styles.modalTitle}>No Female Driver Available</Text>
+
+            {/* Apology message */}
+            <Text style={styles.modalApology}>
+              We sincerely apologize! No female driver is currently available near your pickup location.
+            </Text>
+
+            {/* Question prompt */}
+            <Text style={styles.modalPrompt}>
+              Would you like to connect with a male / nearby driver instead?
+            </Text>
+
+            {/* Actions */}
+            <View style={styles.modalActions}>
+              <Button
+                title="🚗 Continue with Male Driver"
+                onPress={handleAcceptAnyDriver}
+                loading={switchingDriver}
+                fullWidth
+                size="lg"
+              />
+              <Button
+                title="✕ Cancel Ride"
+                variant="outline"
+                onPress={() => {
+                  setShowNoFemaleModal(false);
+                  setShowCancel(true);
+                }}
+                disabled={switchingDriver}
+                fullWidth
+                size="md"
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <ConfirmModal
         visible={showCancel}
         title="Cancel Ride?"
@@ -479,5 +564,67 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     fontWeight: FontWeight.semibold,
     textDecorationLine: 'underline',
+  },
+
+  // No Female Modal
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: Spacing.xl,
+  },
+  modalContent: {
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.xxl,
+    padding: Spacing.xxl,
+    width: '100%',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 10,
+    gap: Spacing.md,
+  },
+  modalIconWrap: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: 'rgba(236,72,153,0.15)',
+    borderWidth: 1.5,
+    borderColor: '#EC4899',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.xs,
+  },
+  modalIcon: {
+    fontSize: 32,
+  },
+  modalTitle: {
+    fontSize: FontSize.xl,
+    fontWeight: FontWeight.bold,
+    color: Colors.textPrimary,
+    textAlign: 'center',
+  },
+  modalApology: {
+    fontSize: FontSize.sm,
+    color: '#F43F5E',
+    textAlign: 'center',
+    lineHeight: 20,
+    fontWeight: FontWeight.medium,
+  },
+  modalPrompt: {
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: Spacing.sm,
+  },
+  modalActions: {
+    width: '100%',
+    gap: Spacing.sm,
   },
 });
