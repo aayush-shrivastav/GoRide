@@ -25,6 +25,20 @@ describe("POST /api/auth/refresh", () => {
     });
   }
 
+  async function registerDriver(agent) {
+    return agent.post("/api/drivers/register").send({
+      name: "Refresh Driver",
+      email: `driver-refresh-${Date.now()}@test.com`,
+      phone: `8${Math.floor(100000000 + Math.random() * 899999999)}`,
+      password: "Password123",
+      gender: "other",
+      vehicleType: "car",
+      vehicleModel: "Test Model",
+      vehicleNumber: `MH01DR${Math.floor(1000 + Math.random() * 8999)}`,
+      licenseNumber: `LIC${Date.now()}`,
+    });
+  }
+
   it("issues a new access token given a valid refresh token cookie", async () => {
     const agent = request.agent(app);
     const registerRes = await registerPassenger(agent);
@@ -34,6 +48,18 @@ describe("POST /api/auth/refresh", () => {
     expect(refreshRes.status).toBe(200);
     expect(refreshRes.body.success).toBe(true);
     expect(refreshRes.body.data.accessToken).toBeDefined();
+  });
+
+  it("issues a new access token for a driver refresh token", async () => {
+    const agent = request.agent(app);
+    const registerRes = await registerDriver(agent);
+    expect(registerRes.status).toBe(201);
+
+    const refreshRes = await agent.post("/api/auth/refresh");
+    expect(refreshRes.status).toBe(200);
+    expect(refreshRes.body.success).toBe(true);
+    expect(refreshRes.body.data.accessToken).toBeDefined();
+    expect(refreshRes.body.data.driver).toBeDefined();
   });
 
   it("rejects a missing refresh token", async () => {

@@ -7,6 +7,17 @@ const registerPassengerSchema = z.object({
   phone: z.string().regex(/^[0-9]{10}$/, "Phone must be 10 digits"),
   password: z.string().min(8),
   gender: z.enum(Object.values(GENDER)).optional(),
+  emergencyContactName: z.string().max(60).optional(),
+  emergencyContactPhone: z
+    .string()
+    .regex(/^[0-9]{10}$/, "Emergency contact phone must be 10 digits")
+    .optional()
+    .or(z.literal("")),
+  emergencyContactEmail: z
+    .string()
+    .email("Enter a valid emergency contact email")
+    .optional()
+    .or(z.literal("")),
 });
 
 const loginSchema = z.object({

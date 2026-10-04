@@ -21,7 +21,8 @@ import { VehicleType } from '../../constants/enums';
 type Props = NativeStackScreenProps<DriverStackParamList, 'Profile'>;
 
 export default function ProfileScreen({ navigation }: Props) {
-  const { user, logout } = useAuth();
+  const { driver, user, logout } = useAuth();
+  const currentDriver = driver || (user as any);
 
   function handleLogout() {
     if (Platform.OS === 'web') {
@@ -47,12 +48,12 @@ export default function ProfileScreen({ navigation }: Props) {
       <ScrollView contentContainerStyle={styles.scroll}>
         {/* Profile Card */}
         <View style={styles.profileCard}>
-          <Avatar name={user?.name ?? 'Driver'} imageUri={user?.profileImage} size={80} />
+          <Avatar name={currentDriver?.name ?? 'Driver'} imageUri={currentDriver?.profileImage} size={80} />
           <View style={styles.profileInfo}>
-            <Text style={styles.name}>{user?.name}</Text>
-            <Text style={styles.email}>{user?.email}</Text>
+            <Text style={styles.name}>{currentDriver?.name}</Text>
+            <Text style={styles.email}>{currentDriver?.email}</Text>
             <View style={styles.ratingBadge}>
-              <Text style={styles.ratingText}>⭐ {user?.rating?.toFixed(1) ?? 'New'} ({user?.ratingCount || 0})</Text>
+              <Text style={styles.ratingText}>⭐ {currentDriver?.rating?.toFixed(1) ?? 'New'} ({currentDriver?.ratingCount || 0})</Text>
             </View>
           </View>
         </View>
@@ -61,11 +62,11 @@ export default function ProfileScreen({ navigation }: Props) {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>VEHICLE DETAILS</Text>
           <View style={styles.card}>
-            <SettingRow label="Vehicle Type" value={getVehicleLabel(user?.vehicleType as VehicleType)} />
+            <SettingRow label="Vehicle Type" value={getVehicleLabel(currentDriver?.vehicleType as VehicleType)} />
             <View style={styles.divider} />
-            <SettingRow label="Model" value={user?.vehicleModel} />
+            <SettingRow label="Model" value={currentDriver?.vehicleModel} />
             <View style={styles.divider} />
-            <SettingRow label="Registration" value={user?.vehicleNumber} />
+            <SettingRow label="Registration" value={currentDriver?.vehicleNumber} />
           </View>
         </View>
 
@@ -77,9 +78,9 @@ export default function ProfileScreen({ navigation }: Props) {
             <View style={styles.divider} />
             <SettingRow label="Change Password" isLink onPress={() => navigation.navigate('ChangePassword')} />
             <View style={styles.divider} />
-            <SettingRow label="Phone Number" value={user?.phone} />
+            <SettingRow label="Phone Number" value={currentDriver?.phone} />
             <View style={styles.divider} />
-            <SettingRow label="License No." value={user?.licenseNumber} />
+            <SettingRow label="License No." value={currentDriver?.licenseNumber} />
           </View>
         </View>
 

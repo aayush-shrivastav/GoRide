@@ -17,6 +17,13 @@ async function check() {
   onlineDrivers.forEach(d => {
     console.log(`- Driver ID: ${d._id}, Name: ${d.name}, Gender: ${d.gender}, Vehicle: ${d.vehicleType}, Online: ${d.isOnline}, Available: ${d.isAvailable}, Coordinates: [${d.currentLocation.coordinates}]`);
   });
+  const Ride = require("../models/Ride");
+  const recentRides = await Ride.find().sort({ createdAt: -1 }).limit(5);
+  console.log("\n=== RECENT RIDES ===");
+  recentRides.forEach(r => {
+    console.log(`- Ride ID: ${r._id}, Status: ${r.rideStatus}, Vehicle: ${r.vehicleType}, Pickup: [${r.pickupLocation?.coordinates}], Rejected: ${r.rejectedDrivers?.length}, Requested: ${r.requestedDrivers?.length}, Created: ${r.createdAt}`);
+  });
+
   await mongoose.disconnect();
   process.exit(0);
 }

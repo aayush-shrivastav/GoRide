@@ -92,12 +92,33 @@ const refresh = catchAsync(async (req, res, next) => {
 
 
 const register = catchAsync(async (req, res, next) => {
-  const { name, email, phone, password, gender } = req.body;
+  const {
+    name,
+    email,
+    phone,
+    password,
+    gender,
+    emergencyContactName,
+    emergencyContactPhone,
+    emergencyContactEmail,
+  } = req.body;
 
   const existing = await User.findOne({ $or: [{ email }, { phone }] });
   if (existing) return next(new AppError("An account with this email or phone already exists", 409));
 
-  const user = await User.create({ name, email, phone, password, gender });
+  const userData = { name, email, phone, password, gender };
+
+  if (emergencyContactPhone && emergencyContactPhone.trim()) {
+    userData.emergencyContacts = [
+      {
+        name: emergencyContactName?.trim() || "Parent / Guardian",
+        phone: emergencyContactPhone.trim(),
+        email: emergencyContactEmail?.trim() || null,
+      },
+    ];
+  }
+
+  const user = await User.create(userData);
   await issueTokensAndRespond(res, user, "passenger", 201, "Registered successfully");
 });
 
@@ -201,7 +222,7 @@ const getEmergencyContacts = catchAsync(async (req, res) => {
 });
 
 const addEmergencyContact = catchAsync(async (req, res, next) => {
-  const { name, phone } = req.body;
+  const { name, phone, email } = req.body;
   if (!name || !phone) return next(new AppError("Name and phone are required", 400));
   if (!/^[0-9]{10}$/.test(phone)) return next(new AppError("Phone must be 10 digits", 400));
 
@@ -211,7 +232,7 @@ const addEmergencyContact = catchAsync(async (req, res, next) => {
     return next(new AppError("Maximum 5 emergency contacts allowed", 400));
   }
 
-  user.emergencyContacts.push({ name, phone });
+  user.emergencyContacts.push({ name, phone, email: email ? email.trim() : null });
   await user.save({ validateBeforeSave: false });
 
   return sendSuccess(res, { statusCode: 201, message: "Emergency contact added", data: { contacts: user.emergencyContacts } });

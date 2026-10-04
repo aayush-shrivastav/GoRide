@@ -146,6 +146,29 @@ describe("Phase 1A — Ride Booking Integration Tests", () => {
     });
   });
 
+  describe("2A. Restore an active ride with multiple status filters", () => {
+    it("accepts the comma-separated status list sent by the mobile app", async () => {
+      const { agent, accessToken } = await registerAndLoginPassenger();
+
+      const createRes = await agent
+        .post("/api/rides")
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send(sampleRidePayload);
+
+      const rideId = createRes.body.data.ride._id;
+      await Ride.findByIdAndUpdate(rideId, { rideStatus: RIDE_STATUS.DRIVER_ASSIGNED });
+
+      const historyRes = await agent
+        .get("/api/rides/my-rides?status=SEARCHING_DRIVER,DRIVER_ASSIGNED&limit=1")
+        .set("Authorization", `Bearer ${accessToken}`);
+
+      expect(historyRes.status).toBe(200);
+      expect(historyRes.body.data.total).toBe(1);
+      expect(historyRes.body.data.rides).toHaveLength(1);
+      expect(historyRes.body.data.rides[0]._id).toBe(rideId);
+    });
+  });
+
   describe("3. Cancel a ride while status is SEARCHING_DRIVER", () => {
     it("allows cancellation during SEARCHING_DRIVER and transitions status to CANCELLED_BY_PASSENGER", async () => {
       const { agent, accessToken } = await registerAndLoginPassenger();

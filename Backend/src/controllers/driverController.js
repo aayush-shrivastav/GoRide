@@ -1,4 +1,5 @@
 const bcrypt = require("bcryptjs");
+const crypto = require("crypto");
 const Driver = require("../models/Driver");
 const Ride = require("../models/Ride");
 const AppError = require("../utils/AppError");
@@ -13,6 +14,13 @@ const {
   REFRESH_TOKEN_MAX_AGE_MS,
 } = require("../utils/tokens");
 
+// Refresh tokens are stored as bcrypt(sha256(token)) for every account type.
+// Keeping the driver flow aligned with authController prevents valid driver
+// sessions from being rejected on the first token refresh.
+function sha256Token(token) {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
+
 const ACTIVE_RIDE_STATUSES = [
   RIDE_STATUS.DRIVER_ASSIGNED,
   RIDE_STATUS.DRIVER_ARRIVING,
@@ -24,7 +32,7 @@ async function issueTokensAndRespond(res, account, statusCode, message) {
   const accessToken = signAccessToken({ id: account._id, role: "driver" });
   const refreshToken = signRefreshToken({ id: account._id, role: "driver" });
 
-  account.refreshTokenHash = await bcrypt.hash(refreshToken, 10);
+  account.refreshTokenHash = await bcrypt.hash(sha256Token(refreshToken), 10);
   await account.save({ validateBeforeSave: false });
 
   res

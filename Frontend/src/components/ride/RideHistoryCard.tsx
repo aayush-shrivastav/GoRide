@@ -1,194 +1,315 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+} from 'react-native';
 import { Colors } from '../../constants/colors';
-import { BorderRadius, FontSize, FontWeight, Spacing } from '../../constants/theme';
+import {
+  BorderRadius,
+  FontSize,
+  FontWeight,
+  Spacing,
+} from '../../constants/theme';
 import { Ride } from '../../types/ride.types';
 import {
   formatFare,
   formatDateTime,
-  getRideStatusLabel,
-  getRideStatusColor,
   getVehicleLabel,
   truncateAddress,
 } from '../../utils/formatters';
-import { VehicleType, RIDE_STATUS } from '../../constants/enums';
+import {
+  VehicleType,
+  RIDE_STATUS,
+} from '../../constants/enums';
+import { useAuth } from '../../context/AuthContext';
 
 interface RideHistoryCardProps {
   ride: Ride;
   onPress?: () => void;
 }
 
-export default function RideHistoryCard({ ride, onPress }: RideHistoryCardProps) {
-  const statusColor = getRideStatusColor(ride.rideStatus);
-  const statusLabel = getRideStatusLabel(ride.rideStatus);
-  const isCompleted = ride.rideStatus === RIDE_STATUS.RIDE_COMPLETED;
-  const isCancelled = ride.rideStatus.includes('CANCELLED');
-  const driver = typeof ride.driver === 'object' && ride.driver !== null ? ride.driver : null;
+export default function RideHistoryCard({
+  ride,
+  onPress,
+}: RideHistoryCardProps) {
+  const { role } = useAuth();
+  const isDriver = role === 'driver';
+
+  const isCompleted =
+    ride.rideStatus === RIDE_STATUS.RIDE_COMPLETED ||
+    ride.rideStatus === 'COMPLETED';
+
+  const isCancelled =
+    typeof ride.rideStatus === 'string' &&
+    ride.rideStatus.includes('CANCELLED');
+
+  const driver =
+    typeof ride.driver === 'object' && ride.driver !== null
+      ? (ride.driver as any)
+      : null;
+
+  const passenger =
+    typeof ride.passenger === 'object' && ride.passenger !== null
+      ? (ride.passenger as any)
+      : null;
+
   const fare = ride.finalFare ?? ride.estimatedFare;
   const distanceKm = ride.distanceKm ?? ride.distance;
   const durationMin = ride.estimatedDurationMin ?? ride.duration;
+
+  const otherPersonName = isDriver
+    ? passenger?.name || 'Passenger'
+    : driver?.name || 'Driver assigned';
+
+  const ratingValue = ride.rating?.stars
+    ? Number(ride.rating.stars).toFixed(1)
+    : isDriver
+    ? passenger?.rating
+      ? Number(passenger.rating).toFixed(1)
+      : '5.0'
+    : driver?.rating
+    ? Number(driver.rating).toFixed(1)
+    : '5.0';
 
   return (
     <TouchableOpacity
       style={[styles.card, isCancelled && styles.cancelledCard]}
       onPress={onPress}
-      activeOpacity={0.7}>
-      <View style={styles.header}>
-        <Text style={styles.date}>{formatDateTime(ride.requestedAt || ride.createdAt)}</Text>
-        <View style={styles.headerRight}>
+      activeOpacity={0.7}
+    >
+      {/* ── Top Row: Date & Status & Fare ── */}
+      <View style={styles.topRow}>
+        <Text style={styles.date}>
+          {formatDateTime(ride.requestedAt || ride.createdAt)}
+        </Text>
+
+        <View style={styles.topRight}>
           <Text style={[styles.fare, isCancelled && styles.cancelledFare]}>
             {formatFare(fare)}
           </Text>
-          <View style={[styles.statusBadge, isCancelled ? styles.cancelledBadge : styles.completedBadge]}>
-            <Text style={[styles.statusText, { color: statusColor }]}>
-              {statusLabel}
+
+          <View
+            style={[
+              styles.statusBadge,
+              isCompleted
+                ? styles.completedBadge
+                : isCancelled
+                ? styles.cancelledBadge
+                : styles.activeBadge,
+            ]}
+          >
+            <Text
+              style={[
+                styles.statusText,
+                isCompleted
+                  ? styles.completedText
+                  : isCancelled
+                  ? styles.cancelledText
+                  : styles.activeText,
+              ]}
+            >
+              {isCompleted ? '✓ COMPLETED' : isCancelled ? '✕ CANCELLED' : ride.rideStatus.replace(/_/g, ' ')}
             </Text>
           </View>
         </View>
       </View>
 
+      {/* ── Timeline & Locations ── */}
       <View style={styles.locations}>
         <View style={styles.timeline}>
-          <View style={[styles.locationDot, isCancelled && styles.mutedDot]} />
-          <View style={styles.locationLine} />
-          <View style={[styles.dropDiamond, isCancelled && styles.mutedDiamond]} />
+          <View style={[styles.pickupDot, isCancelled && styles.mutedDot]} />
+          <View style={styles.timelineLine} />
+          <View style={[styles.dropPin, isCancelled && styles.mutedPin]} />
         </View>
+
         <View style={styles.addresses}>
-          <Text style={[styles.address, isCancelled && styles.mutedAddress]} numberOfLines={1}>
-            {truncateAddress(ride.pickupAddress, 42)}
+          <Text
+            style={[styles.addressText, isCancelled && styles.mutedAddress]}
+            numberOfLines={1}
+          >
+            {truncateAddress(ride.pickupAddress, 40)}
           </Text>
-          <Text style={styles.address} numberOfLines={1}>
-            {truncateAddress(ride.dropAddress, 42)}
+
+          <Text
+            style={[styles.addressText, isCancelled && styles.mutedAddress]}
+            numberOfLines={1}
+          >
+            {truncateAddress(ride.dropAddress, 40)}
           </Text>
         </View>
       </View>
 
-      {isCompleted ? (
-        <View style={styles.footer}>
-          <View>
-            <Text style={styles.driverName}>{driver?.name ?? 'Driver assigned'}</Text>
-            <Text style={styles.vehicle}>
+      {/* ── Card Footer ── */}
+      <View style={styles.footer}>
+        <View style={styles.footerPerson}>
+          <Text style={styles.personRoleLabel}>
+            {isDriver ? 'Passenger' : 'Driver'}
+          </Text>
+          <Text style={styles.personName} numberOfLines={1}>
+            {otherPersonName}
+          </Text>
+        </View>
+
+        <View style={styles.footerRight}>
+          <View style={styles.vehicleChip}>
+            <Text style={styles.vehicleChipText}>
               {getVehicleLabel(ride.vehicleType as VehicleType)}
             </Text>
           </View>
-          <View style={styles.ratingPill}>
-            <Text style={styles.ratingText}>
-              {driver?.rating?.toFixed(1) ?? '4.9'} star
-            </Text>
-          </View>
+
+          {isCompleted && (
+            <View style={styles.ratingPill}>
+              <Text style={styles.ratingText}>⭐ {ratingValue}</Text>
+            </View>
+          )}
         </View>
-      ) : (
-        <Text style={styles.metaText}>
-          {Number(distanceKm || 0).toFixed(1)} km - {Math.round(Number(durationMin || 0))} min
-        </Text>
-      )}
+      </View>
     </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: Colors.card,
-    borderRadius: BorderRadius.xl,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
     padding: Spacing.lg,
     marginBottom: Spacing.md,
     borderWidth: 1,
-    borderColor: Colors.divider,
-    gap: Spacing.md,
-    shadowColor: Colors.black,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.04,
-    shadowRadius: 12,
+    borderColor: '#E2E8F0',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
     elevation: 2,
+    gap: Spacing.md,
   },
   cancelledCard: {
-    borderColor: Colors.errorFaint,
-    opacity: 0.82,
+    borderColor: '#FEE2E2',
+    backgroundColor: '#FAFAFA',
+    opacity: 0.9,
   },
-  header: {
+  topRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  headerRight: {
+  date: {
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '600',
+  },
+  topRight: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.sm,
   },
-  date: {
-    fontSize: FontSize.xs,
-    color: Colors.textMuted,
-    fontWeight: FontWeight.medium,
+  fare: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0F172A',
   },
-  vehicle: {
-    fontSize: FontSize.xs,
-    color: Colors.textMuted,
-    marginTop: 2,
+  cancelledFare: {
+    color: '#94A3B8',
+    textDecorationLine: 'line-through',
   },
   statusBadge: {
-    paddingHorizontal: Spacing.sm,
+    paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: BorderRadius.full,
   },
-  completedBadge: {
-    backgroundColor: '#E0F2FE',
-  },
-  cancelledBadge: {
-    backgroundColor: Colors.errorFaint,
-  },
   statusText: {
     fontSize: 10,
-    fontWeight: FontWeight.bold,
-    textTransform: 'uppercase',
+    fontWeight: '700',
+  },
+  completedBadge: {
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  completedText: {
+    color: '#047857',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  cancelledBadge: {
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  cancelledText: {
+    color: '#B91C1C',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  activeBadge: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  activeText: {
+    color: '#1D4ED8',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
   locations: {
     flexDirection: 'row',
-    gap: Spacing.sm,
     alignItems: 'stretch',
+    gap: Spacing.sm,
   },
   timeline: {
-    width: 16,
+    width: 14,
     alignItems: 'center',
-    paddingVertical: 4,
+    paddingVertical: 3,
   },
-  locationDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: Colors.primary,
+  pickupDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#10B981',
+    borderWidth: 2,
+    borderColor: '#D1FAE5',
+  },
+  timelineLine: {
+    width: 2,
+    flex: 1,
+    minHeight: 22,
+    backgroundColor: '#CBD5E1',
+    marginVertical: 3,
+  },
+  dropPin: {
+    width: 10,
+    height: 10,
+    borderRadius: 2,
+    backgroundColor: '#EF4444',
+    borderWidth: 2,
+    borderColor: '#FEE2E2',
   },
   mutedDot: {
-    backgroundColor: Colors.border,
+    backgroundColor: '#CBD5E1',
+    borderColor: '#E2E8F0',
   },
-  locationLine: {
-    width: 1,
-    flex: 1,
-    minHeight: 26,
-    backgroundColor: Colors.border,
-    marginVertical: 4,
-  },
-  dropDiamond: {
-    width: 8,
-    height: 8,
-    backgroundColor: Colors.textPrimary,
-    transform: [{ rotate: '45deg' }],
-  },
-  mutedDiamond: {
-    backgroundColor: Colors.border,
+  mutedPin: {
+    backgroundColor: '#CBD5E1',
+    borderColor: '#E2E8F0',
   },
   addresses: {
     flex: 1,
     justifyContent: 'space-between',
-    gap: Spacing.md,
+    gap: 10,
   },
-  address: {
-    fontSize: FontSize.base,
-    color: Colors.textPrimary,
-  },
-  mutedAddress: { color: Colors.textMuted },
-  metaText: {
+  addressText: {
     fontSize: FontSize.sm,
-    color: Colors.textMuted,
+    color: '#1E293B',
+    fontWeight: '500',
+    lineHeight: 18,
+  },
+  mutedAddress: {
+    color: '#94A3B8',
   },
   footer: {
     flexDirection: 'row',
@@ -196,31 +317,51 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingTop: Spacing.sm,
     borderTopWidth: 1,
-    borderTopColor: Colors.divider,
+    borderTopColor: '#F1F5F9',
   },
-  driverName: {
+  footerPerson: {
+    flex: 1,
+  },
+  personRoleLabel: {
+    fontSize: 10,
+    color: '#94A3B8',
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 1,
+  },
+  personName: {
     fontSize: FontSize.sm,
-    color: Colors.textPrimary,
-    fontWeight: FontWeight.semibold,
+    fontWeight: '700',
+    color: '#0F172A',
   },
-  fare: {
-    fontSize: FontSize.sm,
-    fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
+  footerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
-  cancelledFare: {
-    color: Colors.textMuted,
-    textDecorationLine: 'line-through',
+  vehicleChip: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  vehicleChipText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#475569',
   },
   ratingPill: {
-    backgroundColor: Colors.surfaceElevated,
-    borderRadius: BorderRadius.md,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 6,
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
   },
   ratingText: {
-    fontSize: FontSize.xs,
-    color: Colors.textSecondary,
-    fontWeight: FontWeight.semibold,
+    fontSize: 11,
+    color: '#92400E',
+    fontWeight: '700',
   },
 });

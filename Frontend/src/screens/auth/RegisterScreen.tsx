@@ -18,10 +18,10 @@ import { FontSize, FontWeight, Spacing, BorderRadius } from '../../constants/the
 import Input from '../../components/common/Input';
 import Button from '../../components/common/Button';
 import { useAuth } from '../../context/AuthContext';
+import { socketService } from '../../services/socket';
 import * as authApi from '../../services/api/authApi';
 import * as driverApi from '../../services/api/driverApi';
 import { Storage } from '../../utils/storage';
-import { socketService } from '../../services/socket';
 import { parseApiError } from '../../utils/formatters';
 import { VEHICLE_TYPES, VehicleType } from '../../constants/enums';
 
@@ -44,6 +44,7 @@ type FormDriver = FormPassenger & {
 
 export default function RegisterScreen({ navigation, route }: Props) {
   const { role } = route.params;
+  const { loginAsPassenger, loginAsDriver } = useAuth();
   const isDriver = role === 'driver';
   const accentColor = isDriver ? Colors.secondary : Colors.primary;
   const gradientColors = isDriver ? ['#00D4B4', '#00B89C'] : Colors.gradientPrimary;
@@ -60,6 +61,9 @@ export default function RegisterScreen({ navigation, route }: Props) {
     vehicleModel: '',
     vehicleNumber: '',
     licenseNumber: '',
+    emergencyContactName: '',
+    emergencyContactPhone: '',
+    emergencyContactEmail: '',
   });
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -79,14 +83,25 @@ export default function RegisterScreen({ navigation, route }: Props) {
     else if (!/^[6-9]\d{9}$/.test(form.phone))
       newErrors.phone = 'Enter a valid 10-digit phone number';
     if (!form.password) newErrors.password = 'Password is required';
-    else if (form.password.length < 6)
-      newErrors.password = 'Minimum 6 characters';
+    else if (form.password.length < 8)
+      newErrors.password = 'Minimum 8 characters';
     if (form.password !== form.confirmPassword)
       newErrors.confirmPassword = 'Passwords do not match';
     if (isDriver) {
       if (!form.vehicleModel.trim()) newErrors.vehicleModel = 'Vehicle model is required';
       if (!form.vehicleNumber.trim()) newErrors.vehicleNumber = 'Vehicle number is required';
       if (!form.licenseNumber.trim()) newErrors.licenseNumber = 'License number is required';
+    } else {
+      if (form.emergencyContactPhone.trim()) {
+        if (!/^[6-9]\d{9}$/.test(form.emergencyContactPhone.trim())) {
+          newErrors.emergencyContactPhone = 'Enter a valid 10-digit phone number';
+        }
+      }
+      if (form.emergencyContactEmail.trim()) {
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.emergencyContactEmail.trim())) {
+          newErrors.emergencyContactEmail = 'Enter a valid email address';
+        }
+      }
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -97,6 +112,8 @@ export default function RegisterScreen({ navigation, route }: Props) {
     setLoading(true);
     try {
       if (isDriver) {
+        // loginAsDriver handles token storage, socket connect & AuthContext state update
+        // which triggers automatic navigation via RootNavigator
         const data = await driverApi.registerDriver({
           name: form.name.trim(),
           email: form.email.trim(),
@@ -111,34 +128,34 @@ export default function RegisterScreen({ navigation, route }: Props) {
         const token = data.accessToken || data.data?.accessToken || '';
         const refresh = data.refreshToken || data.data?.refreshToken || '';
         const driverObj = data.driver || data.data?.driver;
-        await Storage.saveTokens({
-          accessToken: token,
-          refreshToken: refresh,
-        });
+        await Storage.saveTokens({ accessToken: token, refreshToken: refresh });
         await Storage.saveRole('driver');
         if (driverObj) await Storage.saveUserData(driverObj);
         if (token) socketService.connect(token);
+        // Trigger login to update AuthContext (auto-navigates home)
+        await loginAsDriver(form.email.trim(), form.password);
       } else {
+        // Register passenger in backend first
         const data = await authApi.registerPassenger({
           name: form.name.trim(),
           email: form.email.trim(),
           phone: form.phone.trim(),
           password: form.password,
           gender: form.gender,
+          emergencyContactName: form.emergencyContactName.trim() || undefined,
+          emergencyContactPhone: form.emergencyContactPhone.trim() || undefined,
+          emergencyContactEmail: form.emergencyContactEmail.trim() || undefined,
         });
         const token = data.accessToken || data.data?.accessToken || '';
         const refresh = data.refreshToken || data.data?.refreshToken || '';
         const userObj = data.user || data.data?.user;
-        await Storage.saveTokens({
-          accessToken: token,
-          refreshToken: refresh,
-        });
+        await Storage.saveTokens({ accessToken: token, refreshToken: refresh });
         await Storage.saveRole('passenger');
         if (userObj) await Storage.saveUserData(userObj);
         if (token) socketService.connect(token);
+        // Trigger login to update AuthContext (auto-navigates home)
+        await loginAsPassenger(form.email.trim(), form.password);
       }
-      // AuthContext will be refreshed on next mount via restoreSession
-      navigation.replace('Login', { role });
     } catch (err) {
       Alert.alert('Registration Failed', parseApiError(err));
     } finally {
@@ -301,6 +318,52 @@ export default function RegisterScreen({ navigation, route }: Props) {
             </>
           )}
 
+          {/* Passenger Emergency Safety Contact (Optional) */}
+          {!isDriver && (
+            <View style={styles.emergencyContainer}>
+              <View style={styles.emergencyHeaderRow}>
+                <View style={styles.emergencyIconWrap}>
+                  <Text style={styles.emergencyIcon}>🛡️</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.emergencyTitle}>
+                    Emergency Safety Contact <Text style={styles.optionalBadge}>(Optional)</Text>
+                  </Text>
+                  <Text style={styles.emergencySub}>
+                    Live GPS location & cab details will be messaged to this contact during SOS
+                  </Text>
+                </View>
+              </View>
+
+              <Input
+                label="Parent / Guardian Name"
+                value={form.emergencyContactName}
+                onChangeText={v => set('emergencyContactName', v)}
+                error={errors.emergencyContactName}
+                placeholder="e.g. Papa / Mummy / Gaurav"
+                autoCapitalize="words"
+              />
+              <Input
+                label="Parent / Guardian Phone"
+                value={form.emergencyContactPhone}
+                onChangeText={v => set('emergencyContactPhone', v)}
+                error={errors.emergencyContactPhone}
+                placeholder="10-digit mobile number"
+                keyboardType="phone-pad"
+                maxLength={10}
+              />
+              <Input
+                label="Parent / Guardian Email"
+                value={form.emergencyContactEmail}
+                onChangeText={v => set('emergencyContactEmail', v)}
+                error={errors.emergencyContactEmail}
+                placeholder="For live GPS map alert (Optional)"
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+            </View>
+          )}
+
           <Button
             title="Create Account"
             variant={isDriver ? 'secondary' : 'primary'}
@@ -410,4 +473,45 @@ const styles = StyleSheet.create({
   },
   loginText: { fontSize: FontSize.base, color: Colors.textSecondary },
   loginLink: { fontSize: FontSize.base, fontWeight: FontWeight.semibold },
+  emergencyContainer: {
+    backgroundColor: Colors.surfaceElevated,
+    borderRadius: BorderRadius.xl,
+    padding: Spacing.lg,
+    marginTop: Spacing.xl,
+    borderWidth: 1.5,
+    borderColor: 'rgba(239, 68, 68, 0.25)',
+  },
+  emergencyHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: Spacing.md,
+    gap: Spacing.md,
+  },
+  emergencyIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emergencyIcon: {
+    fontSize: 20,
+  },
+  emergencyTitle: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.bold,
+    color: Colors.textPrimary,
+  },
+  optionalBadge: {
+    fontSize: FontSize.xs,
+    fontWeight: FontWeight.normal,
+    color: Colors.textMuted,
+  },
+  emergencySub: {
+    fontSize: FontSize.xs,
+    color: Colors.textSecondary,
+    lineHeight: 16,
+    marginTop: 2,
+  },
 });

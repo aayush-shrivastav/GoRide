@@ -34,3 +34,6 @@ coverage
 # Build output
 build/
 out/
+
+Backend/.env
+Frontend/.env

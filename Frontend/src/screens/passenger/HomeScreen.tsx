@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useIsFocused } from '@react-navigation/native';
 import {
   View,
   Text,
@@ -27,9 +28,10 @@ const DEFAULT_REGION = {
 
 export default function HomeScreen({ navigation }: { navigation: any }) {
   const { user } = useAuth();
-  const { currentRide, otp } = useRide();
+  const { currentRide, otp, setCurrentRide } = useRide();
   const { unreadCount } = useNotifications();
   const mapRef = useRef<MapContainerRef>(null);
+  const isFocused = useIsFocused();
 
   const [userLocation, setUserLocation] = useState<{
     latitude: number;
@@ -39,9 +41,23 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
 
   useEffect(() => {
     loadCurrentLocation();
+    checkActiveRide();
   }, []);
 
+  async function checkActiveRide() {
+    try {
+      const { getActiveRide } = await import('../../services/api/rideApi');
+      const active = await getActiveRide();
+      if (active) {
+        setCurrentRide(active);
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   useEffect(() => {
+    if (!isFocused) return;
     if (!currentRide) return;
 
     // Ignore rides that are already finished — don't redirect away from Home
@@ -65,7 +81,7 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
     ) {
       navigation.navigate('ActiveRide', { rideId: currentRide._id });
     }
-  }, [currentRide, navigation]);
+  }, [currentRide, isFocused, navigation]);
 
 
   async function loadCurrentLocation() {

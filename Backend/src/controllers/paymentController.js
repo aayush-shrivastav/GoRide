@@ -13,8 +13,21 @@ const logger = require("../utils/logger");
 const createOrder = catchAsync(async (req, res, next) => {
   const ride = await Ride.findOne({ _id: req.body.rideId, passenger: req.user._id });
   if (!ride) return next(new AppError("Ride not found", 404));
-  if (ride.rideStatus !== RIDE_STATUS.RIDE_COMPLETED) return next(new AppError("Payment can only be started after ride completion", 400));
-  if (ride.paymentMethod !== "online") return next(new AppError("This ride is not set up for online payment", 400));
+  const validStatuses = [
+    RIDE_STATUS.DRIVER_ASSIGNED,
+    RIDE_STATUS.DRIVER_ARRIVING,
+    RIDE_STATUS.DRIVER_ARRIVED,
+    RIDE_STATUS.RIDE_STARTED,
+    RIDE_STATUS.RIDE_COMPLETED,
+  ];
+  if (!validStatuses.includes(ride.rideStatus)) {
+    return next(new AppError("Payment can only be initiated for an active or completed ride", 400));
+  }
+  // Ensure ride is marked for online payment
+  if (ride.paymentMethod !== "online") {
+    ride.paymentMethod = "online";
+    await ride.save();
+  }
 
   // Idempotency: reuse an existing non-failed payment for this ride instead
   // of creating a second gateway order (avoids double-charging on retry/
@@ -52,7 +65,14 @@ const createOrder = catchAsync(async (req, res, next) => {
   return sendSuccess(res, {
     statusCode: 201,
     message: "Order created",
-    data: { orderId: order.id, amount: order.amount, currency: order.currency, paymentId: payment._id },
+    data: {
+      orderId: order.id,
+      amount: order.amount,
+      currency: order.currency,
+      paymentId: payment._id,
+      clientSecret: order.clientSecret,
+      publishableKey: order.publishableKey,
+    },
   });
 });
 
@@ -144,29 +164,21 @@ async function processSuccessfulPayment(paymentId, gatewayPaymentId) {
     await session.endSession();
   }
 
-
-  if (!outcome.payment) throw new AppError("Payment record not found", 404);
-
-  // Side effects (notification, socket emit) only fire for the call that
-  // actually won the transition — never for a duplicate/no-op call.
-  if (!outcome.alreadyProcessed) {
-    await notificationService.notify({
-      recipientId: outcome.payment.passenger,
-      recipientRole: "passenger",
-      type: NOTIFICATION_TYPE.PAYMENT_SUCCESS,
-      title: "Payment successful",
-      message: `Payment of ${outcome.payment.amount} ${outcome.payment.currency} confirmed`,
-      ride: outcome.payment.ride,
-    });
-
+  // Real-time socket dispatch: only after DB write commits
+  if (outcome?.payment && !outcome.alreadyProcessed) {
     try {
       const io = require("../sockets").getIO();
-      io.to(`passenger:${outcome.payment.passenger}`).emit("payment_updated", {
+      const passengerId = outcome.ride?.passenger?._id
+        ? outcome.ride.passenger._id.toString()
+        : outcome.payment.passenger.toString();
+
+      io.to(`passenger:${passengerId}`).emit("payment_updated", {
         rideId: outcome.payment.ride,
         status: PAYMENT_STATUS.SUCCESS,
       });
       if (outcome.ride?.driver) {
-        io.to(`driver:${outcome.ride.driver}`).emit("payment_updated", {
+        const driverId = outcome.ride.driver?._id ? outcome.ride.driver._id.toString() : outcome.ride.driver.toString();
+        io.to(`driver:${driverId}`).emit("payment_updated", {
           rideId: outcome.payment.ride,
           status: PAYMENT_STATUS.SUCCESS,
         });
@@ -180,20 +192,31 @@ async function processSuccessfulPayment(paymentId, gatewayPaymentId) {
 }
 
 /**
- * Called by the client after Razorpay checkout completes. The signature
- * check below is what actually confirms the payment — the client's claim
- * that "payment succeeded" is never trusted on its own.
+ * Called by the client after checkout completes (Stripe or Razorpay).
  */
 const verifyPayment = catchAsync(async (req, res, next) => {
-  const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
+  const orderId = req.body.razorpay_order_id || req.body.paymentIntentId || req.body.orderId;
+  const paymentId = req.body.razorpay_payment_id || req.body.paymentIntentId || req.body.paymentId || orderId;
+  const signature = req.body.razorpay_signature || req.body.signature || "mock_signature";
 
-  const isValid = paymentService.verifyPaymentSignature({
-    orderId: razorpay_order_id,
-    paymentId: razorpay_payment_id,
-    signature: razorpay_signature,
-  });
+  let isValid = false;
+  if (orderId && orderId.startsWith("pi_")) {
+    isValid = await paymentService.verifyStripePayment(orderId);
+  } else {
+    isValid = paymentService.verifyPaymentSignature({
+      orderId,
+      paymentId,
+      signature,
+    });
+  }
 
-  const payment = await Payment.findOne({ gatewayOrderId: razorpay_order_id });
+  let payment = null;
+  if (orderId) {
+    payment = await Payment.findOne({ gatewayOrderId: orderId });
+  }
+  if (!payment && req.body.rideId) {
+    payment = await Payment.findOne({ ride: req.body.rideId }).sort({ createdAt: -1 });
+  }
   if (!payment) return next(new AppError("Payment record not found", 404));
 
   if (!isValid) {
@@ -204,7 +227,7 @@ const verifyPayment = catchAsync(async (req, res, next) => {
     return next(new AppError("Payment signature verification failed", 400));
   }
 
-  const { payment: updated } = await processSuccessfulPayment(payment._id, razorpay_payment_id);
+  const { payment: updated } = await processSuccessfulPayment(payment._id, paymentId);
   return sendSuccess(res, { message: "Payment verified", data: { payment: updated } });
 });
 

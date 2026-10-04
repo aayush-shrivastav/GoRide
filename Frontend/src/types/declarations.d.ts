@@ -31,3 +31,10 @@ declare module 'react-native-razorpay' {
     ): Promise<RazorpayResponse>;
   }
 }
+
+declare var process: {
+  env: {
+    [key: string]: string | undefined;
+  };
+};
+

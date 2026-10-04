@@ -151,6 +151,51 @@ export default function FareEstimateScreen({ navigation, route }: Props) {
 
       // 409 = passenger already has an active ride in DB
       if (statusCode === 409) {
+        if (Platform.OS === 'web') {
+          const cancelAndRebook = typeof window !== 'undefined' && window.confirm
+            ? window.confirm(
+                'Active Ride Found!\n\nYou already have a ride in progress.\n\nClick OK to Cancel the previous ride and book this new one,\nor Cancel to return to your current active ride.'
+              )
+            : false;
+
+          if (cancelAndRebook) {
+            try {
+              const { getActiveRide: fetchActive, cancelRide: doCancel } = await import('../../services/api/rideApi');
+              const activeRide = await fetchActive();
+              if (activeRide) {
+                await doCancel(activeRide._id, 'Passenger cancelled to rebook');
+              }
+              clearRide();
+              setBooking(false);
+              return handleBookRide();
+            } catch (cancelErr: any) {
+              const cancelMsg = parseApiError(cancelErr);
+              setError(`Could not cancel existing ride: ${cancelMsg}`);
+              if (typeof window !== 'undefined') window.alert(`Could not cancel existing ride: ${cancelMsg}`);
+              setBooking(false);
+              return;
+            }
+          } else {
+            try {
+              const { getActiveRide: fetchActive } = await import('../../services/api/rideApi');
+              const activeRide = await fetchActive();
+              if (activeRide) {
+                setCurrentRide(activeRide);
+                if (activeRide.rideStatus === 'SEARCHING_DRIVER' || activeRide.rideStatus === 'REQUESTED') {
+                  navigation.replace('SearchingDriver', { rideId: activeRide._id });
+                } else {
+                  navigation.replace('ActiveRide', { rideId: activeRide._id });
+                }
+                return;
+              }
+            } catch {
+              navigation.navigate('HomeTabs' as any);
+            }
+            setBooking(false);
+            return;
+          }
+        }
+
         Alert.alert(
           'Active Ride Found',
           'You already have a ride in progress. Would you like to go to that ride or cancel it and book a new one?',
@@ -202,7 +247,11 @@ export default function FareEstimateScreen({ navigation, route }: Props) {
       }
 
       setError(msg);
-      Alert.alert('Booking Failed', msg);
+      if (Platform.OS === 'web') {
+        if (typeof window !== 'undefined') window.alert(`Booking Failed: ${msg}`);
+      } else {
+        Alert.alert('Booking Failed', msg);
+      }
     } finally {
       setBooking(false);
     }
@@ -428,18 +477,35 @@ export default function FareEstimateScreen({ navigation, route }: Props) {
           {/* ── Payment Method ─────────────────────────── */}
           <Text style={styles.sectionLabel}>Payment Method</Text>
           <View style={styles.paymentRow}>
-            {Object.entries(PAYMENT_METHOD).map(([, value]) => (
-              <TouchableOpacity
-                key={value}
-                style={[styles.payBtn, selectedPayment === value && styles.payBtnSelected]}
-                onPress={() => setSelectedPayment(value as PaymentMethod)}
-              >
-                <Text style={styles.payIcon}>{PAYMENT_ICONS[value]}</Text>
-                <Text style={[styles.payText, selectedPayment === value && styles.payTextSelected]}>
-                  {value === 'cash' ? 'Cash' : 'Online\n(UPI/Card)'}
-                </Text>
-              </TouchableOpacity>
-            ))}
+            <TouchableOpacity
+              style={[styles.payBtn, selectedPayment === PaymentMethod.ONLINE && styles.payBtnSelected]}
+              onPress={() => setSelectedPayment(PaymentMethod.ONLINE)}
+            >
+              <Text style={styles.payIcon}>💳</Text>
+              <Text style={[styles.payText, selectedPayment === PaymentMethod.ONLINE && styles.payTextSelected]}>
+                Online (Stripe/UPI)
+              </Text>
+              {selectedPayment === PaymentMethod.ONLINE && (
+                <View style={styles.paySelectedBadge}>
+                  <Text style={styles.paySelectedBadgeText}>✓ Selected</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.payBtn, selectedPayment === PaymentMethod.CASH && styles.payBtnSelected]}
+              onPress={() => setSelectedPayment(PaymentMethod.CASH)}
+            >
+              <Text style={styles.payIcon}>💵</Text>
+              <Text style={[styles.payText, selectedPayment === PaymentMethod.CASH && styles.payTextSelected]}>
+                Cash to Driver
+              </Text>
+              {selectedPayment === PaymentMethod.CASH && (
+                <View style={styles.paySelectedBadge}>
+                  <Text style={styles.paySelectedBadgeText}>✓ Selected</Text>
+                </View>
+              )}
+            </TouchableOpacity>
           </View>
 
           <View style={{ height: 100 }} />
@@ -447,6 +513,11 @@ export default function FareEstimateScreen({ navigation, route }: Props) {
 
         {/* ── Sticky Book Button ─────────────────────────── */}
         <View style={styles.bookFooter}>
+          {error !== '' && (
+            <View style={[styles.errorBox, { marginBottom: Spacing.sm, padding: Spacing.sm }]}>
+              <Text style={styles.errorText}>{error}</Text>
+            </View>
+          )}
           <Button
             title={
               selectedFare
@@ -735,8 +806,20 @@ const styles = StyleSheet.create({
   },
   payBtnSelected: { borderColor: Colors.primary, backgroundColor: Colors.primaryFaint },
   payIcon: { fontSize: 26 },
-  payText: { fontSize: FontSize.xs, color: Colors.textMuted, textAlign: 'center' },
-  payTextSelected: { color: Colors.primary, fontWeight: FontWeight.semibold },
+  payText: { fontSize: FontSize.xs, color: Colors.textMuted, textAlign: 'center', lineHeight: 16 },
+  payTextSelected: { color: Colors.primary, fontWeight: FontWeight.bold },
+  paySelectedBadge: {
+    marginTop: 2,
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: BorderRadius.full,
+  },
+  paySelectedBadgeText: {
+    color: Colors.white,
+    fontSize: 9,
+    fontWeight: FontWeight.bold,
+  },
 
   // Book footer
   bookFooter: {

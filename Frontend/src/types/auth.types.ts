@@ -12,6 +12,12 @@ export interface Passenger {
   vehicleModel?: string;
   vehicleNumber?: string;
   licenseNumber?: string;
+  emergencyContacts?: Array<{
+    _id?: string;
+    name: string;
+    phone: string;
+    email?: string;
+  }>;
 }
 
 export type User = Passenger;
@@ -63,4 +69,8 @@ export interface RegisterData {
   phone: string;
   password?: string;
   gender?: string;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
+  emergencyContactEmail?: string;
 }
+

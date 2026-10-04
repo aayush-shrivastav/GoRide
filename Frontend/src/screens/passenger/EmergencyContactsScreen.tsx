@@ -23,7 +23,7 @@ import {
 } from '../../services/api/authApi';
 import { parseApiError } from '../../utils/formatters';
 
-type Contact = { _id: string; name: string; phone: string };
+type Contact = { _id: string; name: string; phone: string; email?: string };
 
 export default function EmergencyContactsScreen({ navigation }: NativeStackScreenProps<any, any>) {
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -32,6 +32,7 @@ export default function EmergencyContactsScreen({ navigation }: NativeStackScree
   const [saving, setSaving] = useState(false);
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
 
   useEffect(() => {
     fetchContacts();
@@ -60,11 +61,16 @@ export default function EmergencyContactsScreen({ navigation }: NativeStackScree
     }
     setSaving(true);
     try {
-      const data = await addEmergencyContact({ name: name.trim(), phone: phone.trim() });
+      const data = await addEmergencyContact({
+        name: name.trim(),
+        phone: phone.trim(),
+        email: email.trim() || undefined,
+      });
       setContacts(data.contacts);
       setModalVisible(false);
       setName('');
       setPhone('');
+      setEmail('');
     } catch (err) {
       Alert.alert('Error', parseApiError(err));
     } finally {
@@ -112,7 +118,7 @@ export default function EmergencyContactsScreen({ navigation }: NativeStackScree
       </View>
 
       <Text style={styles.subtitle}>
-        These contacts will be notified if you trigger an SOS during a ride.
+        These contacts will be notified via Email & Notifications with your live location if you trigger an SOS during a ride.
       </Text>
 
       {loading ? (
@@ -126,7 +132,7 @@ export default function EmergencyContactsScreen({ navigation }: NativeStackScree
             <View style={styles.empty}>
               <Text style={styles.emptyIcon}>🆘</Text>
               <Text style={styles.emptyTitle}>No emergency contacts</Text>
-              <Text style={styles.emptyText}>Add up to 5 trusted contacts who can be alerted in an emergency.</Text>
+              <Text style={styles.emptyText}>Add up to 5 trusted contacts who will receive emergency location alerts.</Text>
             </View>
           }
           renderItem={({ item }) => (
@@ -136,7 +142,8 @@ export default function EmergencyContactsScreen({ navigation }: NativeStackScree
               </View>
               <View style={styles.info}>
                 <Text style={styles.contactName}>{item.name}</Text>
-                <Text style={styles.contactPhone}>{item.phone}</Text>
+                <Text style={styles.contactPhone}>📞 {item.phone}</Text>
+                {item.email ? <Text style={styles.contactEmail}>✉️ {item.email}</Text> : null}
               </View>
               <TouchableOpacity
                 onPress={() => handleDelete(item._id, item.name)}
@@ -161,7 +168,7 @@ export default function EmergencyContactsScreen({ navigation }: NativeStackScree
             <Text style={styles.modalTitle}>Add Emergency Contact</Text>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Name</Text>
+              <Text style={styles.label}>Name *</Text>
               <TextInput
                 style={styles.input}
                 placeholder="Full name"
@@ -172,7 +179,7 @@ export default function EmergencyContactsScreen({ navigation }: NativeStackScree
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Phone Number</Text>
+              <Text style={styles.label}>Phone Number *</Text>
               <TextInput
                 style={styles.input}
                 placeholder="10-digit mobile number"
@@ -180,6 +187,18 @@ export default function EmergencyContactsScreen({ navigation }: NativeStackScree
                 onChangeText={setPhone}
                 keyboardType="phone-pad"
                 maxLength={10}
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Email Address (For SOS live location email)</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="contact@example.com (optional)"
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
               />
             </View>
 
@@ -262,6 +281,7 @@ const styles = StyleSheet.create({
   info: { flex: 1 },
   contactName: { fontSize: FontSize.base, fontWeight: FontWeight.semibold, color: Colors.textPrimary },
   contactPhone: { fontSize: FontSize.sm, color: Colors.textSecondary, marginTop: 2 },
+  contactEmail: { fontSize: FontSize.xs, color: Colors.textMuted, marginTop: 2 },
   deleteBtn: { padding: Spacing.sm },
   deleteIcon: { fontSize: 18 },
   // Modal

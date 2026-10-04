@@ -1,49 +1,61 @@
 import { io, Socket } from 'socket.io-client';
+
 import { Config } from '../constants/config';
 
-/**
- * Socket.io client singleton.
- *
- * Authentication:
- *   The backend's socketAuthMiddleware reads from socket.handshake.auth.token
- *   (or the accessToken cookie). We dynamically send the current access token
- *   via the auth callback.
- *
- * Token Refresh:
- *   When the access token is rotated via REST or expires during socket reconnection,
- *   updateToken() updates the credentials without dropping the socket unnecessarily.
- *   If an auth error is received, handleAuthError() requests a refreshed token
- *   via tokenRefreshHandler to reconnect smoothly.
- */
+type SocketCallback<T = unknown> = (data: T) => void;
 
 class SocketService {
   private socket: Socket | null = null;
+
   private currentToken: string | null = null;
+
   private listeners: Map<string, Set<Function>> = new Map();
-  private tokenRefreshHandler: (() => Promise<string | null>) | null = null;
+
+  private tokenRefreshHandler:
+    (() => Promise<string | null>) | null = null;
+
   private isRefreshingToken = false;
+
   private refreshRetryCount = 0;
+
   private readonly MAX_AUTH_RETRIES = 3;
 
   /**
-   * Registers the centralized token refresh handler (provided by apiClient).
-   * Decouples socket service from HTTP client to prevent circular dependencies.
+   * Register token refresh handler.
+   *
+   * Usually provided by apiClient/AuthContext.
    */
-  setTokenRefreshHandler(handler: () => Promise<string | null>): void {
+  setTokenRefreshHandler(
+    handler: () => Promise<string | null>
+  ): void {
     this.tokenRefreshHandler = handler;
   }
 
+  /**
+   * Connect Socket.IO using current access token.
+   */
   connect(accessToken?: string): void {
     if (accessToken) {
       this.currentToken = accessToken;
     }
 
-    // If already connected with the same token, do not reconnect unnecessarily
+    if (!this.currentToken) {
+      console.warn(
+        '[Socket] Cannot connect without access token'
+      );
+      return;
+    }
+
+    /*
+     * Already connected.
+     */
     if (this.socket?.connected) {
       return;
     }
 
-    // If socket exists but is disconnected, clean up before re-creating
+    /*
+     * If a stale socket exists, clean it up.
+     */
     if (this.socket) {
       this.socket.removeAllListeners();
       this.socket.disconnect();
@@ -52,9 +64,16 @@ class SocketService {
 
     this.socket = io(Config.SOCKET_URL, {
       auth: (cb) => {
-        cb({ token: this.currentToken });
+        cb({
+          token: this.currentToken,
+        });
       },
-      transports: ['polling', 'websocket'],
+
+      /*
+       * Prefer websocket first, then fallback to polling.
+       */
+      transports: ['websocket', 'polling'],
+
       reconnection: true,
       reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
@@ -62,75 +81,139 @@ class SocketService {
       timeout: 20000,
     });
 
-    // Re-attach registered listeners to socket instance
+    /*
+     * Re-attach all registered application listeners.
+     */
     this.listeners.forEach((callbacks, event) => {
-      callbacks.forEach((cb) => {
-        this.socket?.on(event, cb as any);
+      callbacks.forEach((callback) => {
+        this.socket?.on(
+          event,
+          callback as (...args: any[]) => void
+        );
       });
     });
 
+    /*
+     * Connection established.
+     */
     this.socket.on('connect', () => {
-      console.log('[Socket] Connected:', this.socket?.id);
-      this.refreshRetryCount = 0; // Reset counter on successful connection
+      console.log(
+        '[Socket] Connected:',
+        this.socket?.id
+      );
+
+      this.refreshRetryCount = 0;
     });
 
+    /*
+     * Socket disconnected.
+     *
+     * Do not treat this as driver_offline.
+     */
     this.socket.on('disconnect', (reason) => {
-      console.log('[Socket] Disconnected:', reason);
+      console.log(
+        '[Socket] Disconnected:',
+        reason
+      );
     });
 
-    this.socket.on('connect_error', async (err: Error) => {
-      console.warn('[Socket] Connection error:', err.message);
+    /*
+     * Authentication / connection error.
+     */
+    this.socket.on(
+      'connect_error',
+      async (err: Error) => {
+        const message =
+          err?.message?.toLowerCase?.() || '';
 
-      const isAuthError =
-        err.message.includes('token') ||
-        err.message.includes('auth') ||
-        err.message.includes('Authentication') ||
-        err.message.includes('jwt');
+        const isAuthError =
+          message.includes('token') ||
+          message.includes('auth') ||
+          message.includes('authentication') ||
+          message.includes('jwt') ||
+          message.includes('unauthorized');
 
-      if (isAuthError) {
-        await this.handleAuthError();
+        if (isAuthError) {
+          console.log(
+            '[Socket] Authentication error. Refreshing token...'
+          );
+
+          await this.handleAuthError();
+          return;
+        }
+
+        console.warn(
+          '[Socket] Connection error:',
+          err.message
+        );
       }
-    });
+    );
   }
 
   /**
-   * Updates the access token used for socket authentication.
-   * - Preserves the existing socket instance and listeners.
-   * - If the socket was disconnected due to an auth failure, reconnects immediately.
-   * - If already connected, sets the token for any subsequent reconnection.
+   * Update access token.
    */
   updateToken(newToken: string): void {
-    if (!newToken) return;
+    if (!newToken) {
+      return;
+    }
 
-    const tokenChanged = this.currentToken !== newToken;
+    const tokenChanged =
+      this.currentToken !== newToken;
+
     this.currentToken = newToken;
+
     this.refreshRetryCount = 0;
 
+    /*
+     * No socket exists yet.
+     */
     if (!this.socket) {
       this.connect(newToken);
       return;
     }
 
-    // If the socket was disconnected or failed to connect, reconnect now with new token
+    /*
+     * If socket is disconnected and token changed,
+     * reconnect using the new token.
+     */
     if (!this.socket.connected && tokenChanged) {
-      console.log('[Socket] Reconnecting with refreshed token...');
+      console.log(
+        '[Socket] Reconnecting with refreshed token...'
+      );
+
       this.socket.connect();
     }
   }
 
   /**
-   * Handles authentication errors (e.g. expired access token) during connection.
-   * Calls the registered refresh handler and retries connection with the new token.
-   * Prevents infinite loops via MAX_AUTH_RETRIES.
+   * Handle socket authentication failure.
    */
   private async handleAuthError(): Promise<void> {
-    if (this.isRefreshingToken) return;
+    if (this.isRefreshingToken) {
+      return;
+    }
 
-    if (this.refreshRetryCount >= this.MAX_AUTH_RETRIES) {
+    if (
+      this.refreshRetryCount >=
+      this.MAX_AUTH_RETRIES
+    ) {
       console.warn(
-        '[Socket] Max auth refresh retries reached. Disconnecting to prevent reconnect loop.'
+        '[Socket] Maximum authentication retries reached.'
       );
+
       this.socket?.disconnect();
+
+      return;
+    }
+
+    if (!this.tokenRefreshHandler) {
+      console.warn(
+        '[Socket] No token refresh handler registered.'
+      );
+
+      this.socket?.disconnect();
+
       return;
     }
 
@@ -139,36 +222,56 @@ class SocketService {
 
     try {
       console.log(
-        `[Socket] Auth error encountered. Refreshing token (attempt ${this.refreshRetryCount}/${this.MAX_AUTH_RETRIES})...`
+        `[Socket] Refreshing token attempt ${this.refreshRetryCount}/${this.MAX_AUTH_RETRIES}`
       );
 
-      let newAccessToken: string | null = null;
-      if (this.tokenRefreshHandler) {
-        newAccessToken = await this.tokenRefreshHandler();
+      const newAccessToken =
+        await this.tokenRefreshHandler();
+
+      if (!newAccessToken) {
+        console.warn(
+          '[Socket] Token refresh returned no token.'
+        );
+
+        this.socket?.disconnect();
+
+        return;
       }
 
-      if (newAccessToken) {
-        console.log('[Socket] Token refreshed successfully. Reconnecting socket...');
-        this.updateToken(newAccessToken);
-        if (!this.socket?.connected) {
-          this.socket?.connect();
-        }
-      } else {
-        console.warn('[Socket] Token refresh returned no token. Disconnecting socket.');
-        this.socket?.disconnect();
-      }
+      this.currentToken = newAccessToken;
+
+      console.log(
+        '[Socket] Token refreshed. Reconnecting...'
+      );
+
+      /*
+       * Force a fresh handshake so the new token
+       * is sent through auth callback.
+       */
+      this.socket?.disconnect();
+      this.socket?.connect();
     } catch (err) {
-      console.warn('[Socket] Token refresh failed during connect_error:', err);
+      console.warn(
+        '[Socket] Token refresh failed:',
+        err
+      );
+
       this.socket?.disconnect();
     } finally {
       this.isRefreshingToken = false;
     }
   }
 
+  /**
+   * Completely disconnect socket and clear token.
+   */
   disconnect(): void {
     this.currentToken = null;
+
     this.refreshRetryCount = 0;
+
     this.isRefreshingToken = false;
+
     if (this.socket) {
       this.socket.removeAllListeners();
       this.socket.disconnect();
@@ -180,36 +283,82 @@ class SocketService {
     return this.socket?.connected ?? false;
   }
 
-  on<T>(event: string, callback: (data: T) => void): void {
+  /**
+   * Generic event listener.
+   */
+  on<T>(
+    event: string,
+    callback: SocketCallback<T>
+  ): void {
     if (!this.listeners.has(event)) {
-      this.listeners.set(event, new Set());
+      this.listeners.set(
+        event,
+        new Set()
+      );
     }
-    this.listeners.get(event)!.add(callback);
+
+    this.listeners
+      .get(event)!
+      .add(callback);
 
     if (this.socket) {
-      this.socket.on(event, callback as any);
+      this.socket.on(
+        event,
+        callback as (...args: any[]) => void
+      );
     }
   }
 
-  off<T>(event: string, callback?: (data: T) => void): void {
+  /**
+   * Remove event listener.
+   */
+  off<T>(
+    event: string,
+    callback?: SocketCallback<T>
+  ): void {
     if (callback) {
-      this.listeners.get(event)?.delete(callback);
-      this.socket?.off(event, callback as any);
-    } else {
-      this.listeners.delete(event);
-      this.socket?.off(event);
-    }
-  }
+      this.listeners
+        .get(event)
+        ?.delete(callback);
 
-  emit(event: string, data?: unknown): void {
-    if (!this.socket?.connected) {
-      console.warn(`[Socket] Cannot emit "${event}" — not connected`);
+      this.socket?.off(
+        event,
+        callback as (...args: any[]) => void
+      );
+
       return;
     }
-    this.socket.emit(event, data);
+
+    this.listeners.delete(event);
+
+    this.socket?.off(event);
   }
 
-  // ── Driver-specific emitters (verified event names from driverSocket.js) ──
+  /**
+   * Emit event to backend.
+   */
+  emit(
+    event: string,
+    data?: unknown
+  ): void {
+    if (!this.socket?.connected) {
+      console.warn(
+        `[Socket] Cannot emit "${event}" — socket not connected`
+      );
+
+      return;
+    }
+
+    if (data === undefined) {
+      this.socket.emit(event);
+    } else {
+      this.socket.emit(event, data);
+    }
+  }
+
+  // ============================================================
+  // DRIVER EVENTS
+  // ============================================================
 
   emitDriverOnline(): void {
     this.emit('driver_online');
@@ -219,16 +368,95 @@ class SocketService {
     this.emit('driver_offline');
   }
 
+  emitLocationUpdate(
+    latitude: number,
+    longitude: number,
+    rideId?: string
+  ): void {
+    if (!this.socket?.connected) {
+      return;
+    }
+
+    this.socket.emit(
+      'driver_location_update',
+      {
+        latitude,
+        longitude,
+        rideId,
+      }
+    );
+  }
+
   /**
-   * Emits driver location update.
-   * The backend throttles DB writes to once per 3s.
-   * Only broadcasts to the passenger if rideId is provided and the ride is active.
+   * Listen for incoming ride requests.
+   *
+   * Backend:
+   * io.to(`driver:${driverId}`)
+   *   .emit('ride_request', payload)
    */
-  emitLocationUpdate(latitude: number, longitude: number, rideId?: string): void {
-    if (!this.socket?.connected) return;
-    this.socket.emit('driver_location_update', { latitude, longitude, rideId });
+  onRideRequest<T = unknown>(
+    callback: SocketCallback<T>
+  ): void {
+    this.on<T>(
+      'ride_request',
+      callback
+    );
+  }
+
+  offRideRequest<T = unknown>(
+    callback?: SocketCallback<T>
+  ): void {
+    this.off<T>(
+      'ride_request',
+      callback
+    );
+  }
+
+  /**
+   * Listen for driver location updates.
+   */
+  onDriverLocationUpdate<T = unknown>(
+    callback: SocketCallback<T>
+  ): void {
+    this.on<T>(
+      'driver_location_update',
+      callback
+    );
+  }
+
+  offDriverLocationUpdate<T = unknown>(
+    callback?: SocketCallback<T>
+  ): void {
+    this.off<T>(
+      'driver_location_update',
+      callback
+    );
+  }
+
+  /**
+   * Listen for notification events.
+   */
+  onNotification<T = unknown>(
+    callback: SocketCallback<T>
+  ): void {
+    this.on<T>(
+      'notification',
+      callback
+    );
+  }
+
+  offNotification<T = unknown>(
+    callback?: SocketCallback<T>
+  ): void {
+    this.off<T>(
+      'notification',
+      callback
+    );
   }
 }
 
-// Export a singleton instance
-export const socketService = new SocketService();
+/*
+ * Singleton instance.
+ */
+export const socketService =
+  new SocketService();
