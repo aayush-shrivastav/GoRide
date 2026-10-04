@@ -85,6 +85,7 @@ socketService.setTokenRefreshHandler(refreshAuthTokens);
 
 apiClient.interceptors.request.use(
   async (config) => {
+    config.baseURL = Config.API_BASE_URL;
     const tokens = await Storage.getTokens();
     if (tokens?.accessToken) {
       config.headers.Authorization = `Bearer ${tokens.accessToken}`;
