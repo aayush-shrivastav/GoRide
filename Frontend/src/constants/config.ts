@@ -60,7 +60,7 @@ function getApiBaseUrl(): string {
     return envUrl;
   }
 
-  return 'http://localhost:5000/api';
+  return 'https://goride-khwe.onrender.com/api';
 }
 
 function getSocketUrl(): string {
@@ -84,7 +84,7 @@ function getSocketUrl(): string {
     return envUrl;
   }
 
-  return 'http://localhost:5000';
+  return 'https://goride-khwe.onrender.com';
 }
 
 export const Config = {
