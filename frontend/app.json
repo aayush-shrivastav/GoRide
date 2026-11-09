@@ -29,7 +29,10 @@
         "FOREGROUND_SERVICE",
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_FINE_LOCATION",
-        "android.permission.RECORD_AUDIO"
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
       ],
       "package": "com.anonymous.goride"
     },
@@ -55,6 +58,11 @@
       ],
       "expo-font",
       "expo-audio"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "44a0e738-557a-4625-9727-5d5bcd8912a3"
+      }
+    }
   }
 }
